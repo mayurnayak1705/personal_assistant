@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Virtual Environment
+.venv/
+venv/
+
+# Environment files
+.env
+**/.env
+
+# Databases
+Databases/
+Databases/**
+
+# Chroma
+chroma.sqlite3
+*.sqlite3
+*.db
+
+# macOS
+.DS_Store
+
+# VS Code
+.vscode/
+
+# Logs
+*.log
