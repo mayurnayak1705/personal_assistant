@@ -30,7 +30,7 @@ class GraphState(TypedDict):
     clarification_question: str
 
     # Memory Agent
-    memory_result: str | None
+    memory_result: dict
 
     # Planner
     execution_plan: list[PlanStep]

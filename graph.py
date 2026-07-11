@@ -1,10 +1,13 @@
 from langgraph.graph import StateGraph, END
+from langchain_core.messages import HumanMessage
+from dotenv import load_dotenv
+import asyncio
 
 from graph_state import GraphState
 
 from Agent_Definations.orchestrator import orchestrator_node
 from Agent_Definations.memory import memory_node
-from dotenv import load_dotenv
+from Agent_Definations.respond import respond_node
 
 load_dotenv()
 
@@ -16,6 +19,7 @@ workflow = StateGraph(GraphState)
 
 workflow.add_node("orchestrator", orchestrator_node)
 workflow.add_node("memory", memory_node)
+workflow.add_node("respond", respond_node)
 
 # Planner node will be added later
 # workflow.add_node("planner", planner_node)
@@ -25,7 +29,6 @@ workflow.add_node("memory", memory_node)
 # ------------------------
 
 workflow.set_entry_point("orchestrator")
-
 
 # ------------------------
 # Router
@@ -42,7 +45,7 @@ workflow.add_conditional_edges(
         "planner": END,                 # Add planner node later
         "memory": "memory",
         "planner_with_memory": END,     # Later -> memory -> planner
-        "respond": END,
+        "respond": "respond",
         "clarify": END,
     },
 )
@@ -53,20 +56,32 @@ workflow.add_conditional_edges(
 
 workflow.add_edge(
     "memory",
+    "respond",
+)
+
+
+# ------------------------
+# Respond
+# ------------------------
+
+workflow.add_edge(
+    "respond",
     END,
 )
 
 app = workflow.compile()
 
 
-from langchain_core.messages import HumanMessage
+# ------------------------
+# Test State
+# ------------------------
 
 state = {
     "messages": [
-        HumanMessage(content="Can you update my name from Mayur to Mayur Nayak")
+        HumanMessage(content="Can you add expense for travel 100 rupees on 10th July 2026")
     ],
 
-    "user_input": "Can you update my name from Mayur to Mayur Nayak",
+    "user_input": "Can you add expense for travel 100 rupees on 10th July 2026",
 
     # Orchestrator
     "intent": "",
@@ -93,7 +108,15 @@ state = {
     "final_response": "",
 }
 
+if __name__ == "__main__":
 
-import asyncio
-result = asyncio.run(app.ainvoke(state))
-print(result["memory_result"])
+    result = asyncio.run(app.ainvoke(state))
+
+    if result.get("memory_result"):
+        print(result["memory_result"])
+
+    elif result.get("final_response"):
+        print(result["final_response"])
+
+    elif result.get("clarification_question"):
+        print(result["clarification_question"])

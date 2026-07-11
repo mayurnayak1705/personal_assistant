@@ -65,18 +65,39 @@ Examples:
 ---
 
 memory
-Use when the request is asking for stored knowledge or any knowledge which needs to be stored which could be personal or private etc.
+
+Use when the request involves retrieving, storing, updating, deleting, or summarizing the user's personal information or personal data.
+
+This includes:
+
+* Previous conversations
+* Memories
+* Personal information
+* User preferences
+* Notes
+* Documents
+* Project history
+* Previously completed work
+* Stored facts
+* Personal expenses
+* Expense tracking
+* Expense summaries
+* Financial records
+
 Examples:
-- Previous conversations
-- memories
-- personal information like names, food etc
-- Notes
-- Documents
-- User preferences
-- Project history
-- Previously completed work
-- Stored facts
----
+
+* Remember that my favorite food is biryani.
+* What is my preferred editor?
+* What did we discuss yesterday?
+* I spent ₹250 on lunch.
+* Add an expense of ₹500 for groceries.
+* Show my expenses.
+* How much did I spend this month?
+* Delete my last expense.
+* Update my coffee expense to ₹180.
+* Show food expenses.
+
+
 
 planner_with_memory
 
@@ -242,6 +263,52 @@ Response
     "clarification_question": "Which report would you like me to open?"
 }
 
+Example 6
+
+User:
+I spent ₹320 on dinner.
+
+Response
+
+{
+"intent": "expense_tracking",
+"confidence": 0.99,
+"routing_decision": "memory",
+"clarification_question": ""
+}
+
+---
+
+Example 7
+
+User:
+Show my expenses for this month.
+
+Response
+
+{
+"intent": "expense_tracking",
+"confidence": 0.99,
+"routing_decision": "memory",
+"clarification_question": ""
+}
+
+---
+
+Example 8
+
+User:
+Delete my last expense.
+
+Response
+
+{
+"intent": "expense_tracking",
+"confidence": 0.98,
+"routing_decision": "memory",
+"clarification_question": ""
+}
+
 ---
 ## Output Format
 Return ONLY valid JSON.
@@ -315,3 +382,4 @@ def orchestrator_node(state: GraphState):
             else ""
         ),
     }
+    

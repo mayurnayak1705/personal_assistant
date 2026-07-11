@@ -305,14 +305,65 @@ memory_client = MCPClient(
     model="gpt-4o-mini"
 )
 
+expense_client = MCPClient(
+    server_module="mcp_servers.expense.server.main",
+    model="gpt-4o-mini"
+)
+
+
+EXPENSE_SYSTEM_PROMPT = """
+# Expense Agent
+
+## Objective
+
+You are responsible for managing the user's personal expenses.
+
+You interact exclusively with the Expense MCP Server.
+
+You never access databases directly.
+You never execute SQL.
+All expense operations must be performed using the available MCP tools.
+
+---
+
+## Responsibilities
+
+You are responsible for:
+
+- Recording expenses
+- Retrieving expenses
+- Updating expenses
+- Deleting expenses
+- Listing expenses
+- Summarizing expenses
+
+Always use the appropriate MCP tool whenever an expense operation is requested.
+
+After the tool returns, respond naturally to the user.
+"""
+
 
 async def memory_node(state: GraphState):
     print("========== Memory NODE ==========")
-    # print(state)
-    response = await memory_client.execute(
-        user_input=state["user_input"],
-        system_prompt=SYSTEM_PROMPT,
-    )
-    print("========== Memory NODE ==========")
+
+    if state["intent"] == "expense_tracking":
+        response = await expense_client.execute(
+            user_input=state["user_input"],
+            system_prompt=EXPENSE_SYSTEM_PROMPT,
+        )
+    else:
+        response = await memory_client.execute(
+            user_input=state["user_input"],
+            system_prompt=SYSTEM_PROMPT,
+        )
+
+    print("========== Memory RESPONSE ==========")
     print(response)
-    return {"memory_result": response}
+
+    return {
+        "memory_result": {
+            "status": "success",
+            "intent": state["intent"],
+            "result": response
+        }
+    }

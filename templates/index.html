@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Personal Assistant</title>
+
+    <!-- Google Font -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+    <!-- Markdown -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
+    <!-- Highlight JS -->
+    <link rel="stylesheet"
+          href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+
+<body>
+
+<div class="app">
+
+    <!-- ================= Sidebar ================= -->
+
+    <aside class="sidebar">
+
+        <div class="logo">
+
+            <div class="logo-circle">
+                🤖
+            </div>
+
+            <div>
+                <h2>Personal</h2>
+                <span>Assistant</span>
+            </div>
+
+        </div>
+
+        <button class="new-chat" id="newChatBtn">
+
+            <span>＋</span>
+
+            New Chat
+
+        </button>
+
+        <div class="sidebar-title">
+            Recent Chats
+        </div>
+
+        <div class="chat-list" id="chatList">
+
+            <div class="chat-item active">
+                AI Assistant
+            </div>
+
+        </div>
+
+        <div class="sidebar-bottom">
+
+            <div class="status-card">
+
+                <div class="status-dot"></div>
+
+                Connected
+
+            </div>
+
+            <div class="status-card">
+
+                🧠 Memory Enabled
+
+            </div>
+
+            <div class="status-card">
+
+                ⚡ Planner Ready
+
+            </div>
+
+        </div>
+
+    </aside>
+
+    <!-- ================= Main ================= -->
+
+    <main class="main">
+
+        <!-- Top Bar -->
+
+        <header class="topbar">
+
+            <div class="assistant-title">
+
+                <h1>AI Personal Assistant</h1>
+
+                <p>Powered by LangGraph + MCP</p>
+
+            </div>
+
+        </header>
+
+        <!-- Chat Window -->
+
+        <section class="chat-window" id="chatWindow">
+
+            <!-- Welcome -->
+
+            <div class="welcome" id="welcomeScreen">
+
+                <div class="welcome-icon">
+                    🤖
+                </div>
+
+                <h1>Hello Mayur</h1>
+
+                <p>
+
+                    How can I help you today?
+
+                </p>
+
+                <div class="suggestions">
+
+                    <button class="suggestion">
+
+                        Continue my AI assistant project
+
+                    </button>
+
+                    <button class="suggestion">
+
+                        Remember today's meeting
+
+                    </button>
+
+                    <button class="suggestion">
+
+                        Show my expenses
+
+                    </button>
+
+                    <button class="suggestion">
+
+                        Search my notes
+
+                    </button>
+
+                </div>
+
+            </div>
+
+            <!-- Messages -->
+
+            <div id="messages"></div>
+
+        </section>
+
+        <!-- Typing Indicator -->
+
+        <div class="typing hidden" id="typingIndicator">
+
+            <div class="typing-avatar">
+                🤖
+            </div>
+
+            <div class="typing-bubble">
+
+                <span></span>
+
+                <span></span>
+
+                <span></span>
+
+            </div>
+
+        </div>
+
+        <!-- Input -->
+
+        <footer class="chat-input">
+
+            <button class="icon-btn" id="attachBtn">
+
+                📎
+
+            </button>
+
+            <textarea
+
+                id="messageInput"
+
+                placeholder="Ask anything..."
+
+                rows="1"
+
+            ></textarea>
+
+            <button class="icon-btn" id="voiceBtn">
+
+                🎤
+
+            </button>
+
+            <button class="send-btn" id="sendBtn">
+
+                ➜
+
+            </button>
+
+        </footer>
+
+    </main>
+
+</div>
+
+<!-- Toast -->
+
+<div class="toast hidden" id="toast">
+
+    Copied!
+
+</div>
+
+<!-- Loading -->
+
+<div class="loading hidden" id="loading">
+
+    <div class="spinner"></div>
+
+</div>
+
+<script src="/static/js/app.js"></script>
+
+</body>
+</html>
