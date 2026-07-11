@@ -10,7 +10,7 @@ from graph import app
 from session_store import add_turn, get_turns, pop_session
 from token_utils import count_tokens
 from Server.postgre_insert import insert_chat_history_batch
-from Server.postgre_search import fetch_conversation_history
+from Server.postgre_search import fetch_conversation_history, fetch_user_facts
 
 router = APIRouter()
 
@@ -35,13 +35,15 @@ async def chat(request: ChatRequest):
             else AIMessage(content=t["message"])
             for t in prior_turns
         ]
-
+        user_facts = await asyncio.to_thread(fetch_user_facts)
+        print("========== USER FACTS ==========")
+        print(user_facts)
         state = {
             # Conversation - now includes everything said earlier in this
             # session, not just the latest message
             "messages": [*history_messages, HumanMessage(content=request.message)],
             "user_input": request.message,
-
+            "user_facts": user_facts,
             # Orchestrator
             "intent": "",
             "routing_decision": "",

@@ -62,3 +62,27 @@ def fetch_conversation_history(conversation_id: str, limit: int = 50) -> list[di
                 (conversation_id, limit),
             )
             return cur.fetchall()
+        
+
+def fetch_user_facts() -> str:
+    """
+    Returns all user facts as a single formatted string.
+    """
+
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT fact_value
+                FROM user_facts
+                ORDER BY created_at ASC
+            """)
+
+            rows = cur.fetchall()
+
+    if not rows:
+        return "No user facts found."
+
+    return "\n".join(
+        f"- {row['fact_value']}"
+        for row in rows
+    )

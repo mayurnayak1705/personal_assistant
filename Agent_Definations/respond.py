@@ -89,6 +89,9 @@ async def respond_node(state: GraphState):
 Conversation So Far:
 {format_conversation(state.get("messages", []))}
 
+User Facts:
+{state.get("user_facts", "")}
+
 Latest User Request:
 {state.get("user_input", "")}
 

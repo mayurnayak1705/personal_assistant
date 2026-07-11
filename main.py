@@ -19,7 +19,6 @@ templates = Jinja2Templates(directory="templates")
 app.include_router(router, prefix="/api")
 
 
-
 @app.get("/")
 async def index(request: Request):
     return templates.TemplateResponse(

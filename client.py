@@ -8,7 +8,7 @@ from mcp.client.stdio import (
     StdioServerParameters,
 )
 
-
+from datetime import datetime
 class MCPClient:
     """
     Generic MCP Client.
@@ -38,7 +38,26 @@ class MCPClient:
         Execute an LLM request using tools exposed
         by an MCP server.
         """
+        today = datetime.now()
 
+        date_context = f"""
+        Current Date and Time:
+
+        - Today: {today.strftime("%Y-%m-%d")}
+        - Current Month: {today.strftime("%B %Y")}
+        - Current Year: {today.strftime("%Y")}
+
+        When the user refers to:
+        - today
+        - yesterday
+        - tomorrow
+        - this week
+        - this month
+        - last month
+        - this year
+
+        Always resolve them using the current date above before calling tools.
+        """
         server_params = StdioServerParameters(
             command=sys.executable,
             args=["-m", self.server_module],
@@ -87,13 +106,33 @@ class MCPClient:
                 ####################################################
 
                 messages = []
+                today = datetime.now()
 
+                date_context = f"""
+                Current Date and Time:
+
+                - Today: {today.strftime("%Y-%m-%d")}
+                - Current Month: {today.strftime("%B %Y")}
+                - Current Year: {today.strftime("%Y")}
+
+                When the user refers to:
+                - today
+                - yesterday
+                - tomorrow
+                - this week
+                - this month
+                - last month
+                - this year
+
+                Always resolve them using the current date above before calling tools.
+                """
+                
                 if system_prompt:
 
                     messages.append(
                         {
                             "role": "system",
-                            "content": system_prompt,
+                            "content": date_context + "\n\n" + system_prompt
                         }
                     )
 
@@ -120,7 +159,6 @@ class MCPClient:
                 ####################################################
 
                 while True:
-
                     tool_calls = [
                         item
                         for item in response.output
