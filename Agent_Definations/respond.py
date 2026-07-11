@@ -2,6 +2,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 
 from graph_state import GraphState
+from conversation_utils import format_conversation
 
 llm = ChatOpenAI(model="gpt-4.1")
 
@@ -85,7 +86,10 @@ async def respond_node(state: GraphState):
     print("========== RESPOND NODE ==========")
 
     context = f"""
-User Request:
+Conversation So Far:
+{format_conversation(state.get("messages", []))}
+
+Latest User Request:
 {state.get("user_input", "")}
 
 Intent:

@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import Optional
 from pydantic import BaseModel
 
 
@@ -9,8 +9,21 @@ class ChatMessage(BaseModel):
 
 class ChatRequest(BaseModel):
     message: str
+    conversation_id: Optional[str] = None   # frontend generates & persists this per tab; server generates one if absent
+    user_id: Optional[str] = "mayur"        # single-user assistant for now
 
 
 class ChatResponse(BaseModel):
     response: str
+    conversation_id: str
     success: bool = True
+
+
+class EndSessionRequest(BaseModel):
+    conversation_id: str
+    user_id: Optional[str] = "mayur"
+
+
+class EndSessionResponse(BaseModel):
+    success: bool
+    messages_saved: int

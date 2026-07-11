@@ -39,3 +39,26 @@ def fetch_records(search_results):
                     row["table"] = table
                     output.append(row)
     return output
+
+
+def fetch_conversation_history(conversation_id: str, limit: int = 50) -> list[dict]:
+    """
+    Returns the turns already persisted for a conversation_id, oldest first.
+
+    Used by routes.py as a fallback when the in-memory session buffer is
+    empty — e.g. the server restarted mid-conversation, or the session was
+    already flushed once and the same conversation_id is continuing.
+    """
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT role, message, token_count, created_at
+                FROM chat_history
+                WHERE conversation_id = %s
+                ORDER BY created_at ASC
+                LIMIT %s
+                """,
+                (conversation_id, limit),
+            )
+            return cur.fetchall()

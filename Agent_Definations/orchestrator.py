@@ -348,9 +348,6 @@ class OrchestratorDecision(BaseModel):
         description="Empty string if no clarification is required."
     )
 
-from langchain_core.messages import HumanMessage, SystemMessage
-
-
 def orchestrator_node(state: GraphState):
 
     threshold = state.get("confidence_threshold", 0.85)
@@ -360,12 +357,17 @@ def orchestrator_node(state: GraphState):
         + f"\n\nThe minimum confidence required before routing is {threshold:.2f}."
     )
 
+    # Use the full conversation (earlier turns + latest message) rather than
+    # just the latest message in isolation, so follow-ups like "make that
+    # 150 instead" can be classified using what came before them.
+    conversation_messages = state.get("messages") or [HumanMessage(content=state["user_input"])]
+
     response: OrchestratorDecision = (
         llm.with_structured_output(OrchestratorDecision)
         .invoke(
             [
                 SystemMessage(content=system_prompt),
-                HumanMessage(content=state["user_input"]),
+                *conversation_messages,
             ]
         )
     )
@@ -382,4 +384,3 @@ def orchestrator_node(state: GraphState):
             else ""
         ),
     }
-    
