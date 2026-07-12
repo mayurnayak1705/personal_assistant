@@ -294,6 +294,7 @@ Never generate alternate intent names such as:
 Always return:
 
 "intent": "expense_tracking"
+"routing_decision": "memory" 
 
 ## Clarification Rules
 
