@@ -5,9 +5,11 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 
 from graph_state import GraphState
+from conversation_utils import format_conversation
 # from tools import memory_tools   # MCP tools
 
 from client import MCPClient
+from mcp_servers.expense.client import expense_client
 
 llm = ChatOpenAI(model="gpt-4.1")
 
@@ -305,12 +307,6 @@ memory_client = MCPClient(
     model="gpt-4o-mini"
 )
 
-expense_client = MCPClient(
-    server_module="mcp_servers.expense.server.main",
-    model="gpt-4o-mini"
-)
-
-
 EXPENSE_SYSTEM_PROMPT = """
 # Expense Agent
 
@@ -335,9 +331,27 @@ You are responsible for:
 - Updating expenses
 - Deleting expenses
 - Listing expenses
-- Summarizing expenses
+- Searching and filtering expenses by date, category, text, or amount
+- Daily, weekly, and monthly spending reports
+- Category breakdowns, income versus expenses, and remaining income
+- Highest expense, average daily spending, budget utilisation, and trends
+- Undoing the latest expense change
 
 Always use the appropriate MCP tool whenever an expense operation is requested.
+
+Currency rules:
+- Every amount is Indian rupees (INR).
+- Format user-facing amounts with the ₹ symbol. Never use dollars or a $ symbol.
+
+Reporting rules:
+- For summaries, analytics, or broad list requests, call expense_report.
+- For search or filtered requests, call search_expenses.
+- Choose daily, weekly, or monthly granularity from the user's wording.
+- Do not enumerate a large result set. Show a concise summary and at most 10 transactions.
+- Mention when additional transactions were summarised instead of displayed.
+- After expense_report or search_expenses, keep the text response to a short summary. Do not repeat the full category table or transaction list because the UI renders the structured details and charts.
+- If budget utilisation is requested without a configured budget, explain that a budget must be set.
+- For update or delete requests without a uniquely identifiable expense ID, ask a concise clarification question.
 
 After the tool returns, respond naturally to the user.
 """
@@ -348,22 +362,27 @@ async def memory_node(state: GraphState):
 
     if state["intent"] == "expense_tracking":
         response = await expense_client.execute(
-            user_input=state["user_input"],
+            user_input=format_conversation(state.get("messages", [])),
             system_prompt=EXPENSE_SYSTEM_PROMPT,
         )
+        response_text = response["text"]
+        artifacts = {"expense_report": response["artifact"]} if response.get("artifact") else {}
     else:
         response = await memory_client.execute(
             user_input=state["user_input"],
             system_prompt=SYSTEM_PROMPT,
         )
+        response_text = response
+        artifacts = {}
 
     print("========== Memory RESPONSE ==========")
-    print(response)
+    print(response_text)
 
     return {
         "memory_result": {
             "status": "success",
             "intent": state["intent"],
-            "result": response
-        }
+            "result": response_text
+        },
+        "artifacts": artifacts,
     }

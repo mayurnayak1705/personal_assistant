@@ -76,6 +76,25 @@ Examples
 - Multi-step workflows
 - Tool execution
 
+All requests to send, read, or otherwise act on WhatsApp messages MUST use:
+
+"intent": "whatsapp_messaging"
+"routing_decision": "planner"
+
+This also applies to a short follow-up that selects a WhatsApp contact after
+the assistant asked the user to disambiguate duplicate names. Use the prior
+conversation to recognize that follow-up.
+
+All requests to create, schedule, list, update, cancel, or acknowledge a
+time-based reminder MUST use:
+
+"intent": "reminder_management"
+"routing_decision": "planner"
+
+Examples include "remind me to mail XYZ after 30 minutes", "remind me
+tomorrow at 9", and "show my reminders". Reminder execution is a Planner
+action, not a Memory Agent operation.
+
 ---
 
 ### memory
@@ -264,6 +283,8 @@ The following intents are fixed and MUST always be returned exactly as written.
 - delete_memory
 - general_conversation
 - question_answering
+- whatsapp_messaging
+- reminder_management
 
 For any expense-related request, the intent MUST ALWAYS be:
 

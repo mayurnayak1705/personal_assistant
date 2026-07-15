@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Any, Optional
 from pydantic import BaseModel
 
 
@@ -17,6 +17,7 @@ class ChatResponse(BaseModel):
     response: str
     conversation_id: str
     success: bool = True
+    artifact: Optional[dict[str, Any]] = None
 
 
 class EndSessionRequest(BaseModel):
@@ -27,3 +28,7 @@ class EndSessionRequest(BaseModel):
 class EndSessionResponse(BaseModel):
     success: bool
     messages_saved: int
+
+
+class ReminderAcknowledgeRequest(BaseModel):
+    user_id: str = "mayur"

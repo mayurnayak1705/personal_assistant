@@ -8,7 +8,9 @@ try:
     def count_tokens(text: str) -> int:
         return len(_encoding.encode(text or ""))
 
-except ImportError:
-    # Fallback if tiktoken isn't installed: rough word-based estimate.
+except Exception:
+    # tiktoken may be installed but unable to populate its model cache on an
+    # offline first run. Token counts are bookkeeping only, so this must not
+    # prevent the assistant from starting.
     def count_tokens(text: str) -> int:
         return max(1, len((text or "").split()))

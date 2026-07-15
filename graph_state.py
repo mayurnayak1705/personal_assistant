@@ -19,6 +19,8 @@ class PlanStep(TypedDict):
 
 class GraphState(TypedDict):
     # Conversation
+    conversation_id: str
+    user_id: str
     messages: Annotated[list[BaseMessage], add_messages]
     user_input: str
     user_facts: str
@@ -35,6 +37,7 @@ class GraphState(TypedDict):
     # Planner
     execution_plan: list[PlanStep]
     current_step: int
+    planner_result: dict
 
     # Executor
     artifacts: dict[str, Any]

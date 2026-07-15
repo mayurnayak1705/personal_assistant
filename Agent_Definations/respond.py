@@ -59,6 +59,8 @@ If an operation failed:
 
 If clarification is required:
 - Return only the clarification question.
+- If the Planner Result itself asks the user to choose among matching contacts,
+  preserve that question and its name/phone-number options exactly.
 
 If no execution result exists:
 - Answer the user's request directly using your general knowledge.
@@ -84,6 +86,20 @@ Use only the information provided.
 
 async def respond_node(state: GraphState):
     print("========== RESPOND NODE ==========")
+
+    # Tool-backed planner output is transactional evidence. Passing it through
+    # verbatim prevents a second LLM from turning a clarification into a false
+    # claim that a message was sent.
+    planner_result = state.get("planner_result")
+    if planner_result and planner_result.get("result"):
+        return {"final_response": str(planner_result["result"])}
+
+    # Expense output is grounded in MCP tool results and already formatted as
+    # INR. Preserve it verbatim so a second model cannot change the currency or
+    # expand a bounded report back into an unbounded transaction list.
+    memory_result = state.get("memory_result")
+    if state.get("intent") == "expense_tracking" and memory_result and memory_result.get("result"):
+        return {"final_response": str(memory_result["result"])}
 
     context = f"""
 Conversation So Far:

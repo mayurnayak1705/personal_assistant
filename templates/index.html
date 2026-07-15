@@ -71,11 +71,40 @@
 
     </header>
 
+    <!-- Notification center opened from the bell button. -->
+    <aside class="notification-panel hidden" id="notificationPanel"
+           aria-labelledby="notificationPanelTitle">
+        <div class="notification-panel-head">
+            <div>
+                <span class="notification-eyebrow">Notifications</span>
+                <h2 id="notificationPanelTitle">Pending reminders</h2>
+            </div>
+            <span class="notification-count" id="notificationCount">0</span>
+        </div>
+        <div class="notification-list" id="notificationList"></div>
+        <p class="notification-empty" id="notificationEmpty">No pending reminders.</p>
+    </aside>
+
     <!-- Floating notification card -->
     <div class="notice hidden" id="notice" role="status" aria-live="polite">
         <span class="notice-icon" id="noticeIcon">✦</span>
         <span class="notice-text" id="noticeText">Memory Ready</span>
     </div>
+
+    <!-- Persistent reminder popup: stays until the user acknowledges it. -->
+    <section class="reminder-popup hidden" id="reminderPopup" role="alertdialog"
+             aria-live="assertive" aria-labelledby="reminderTitle">
+        <div class="reminder-popup-head">
+            <span class="reminder-popup-icon" aria-hidden="true">⏰</span>
+            <span>Reminder</span>
+        </div>
+        <h2 id="reminderTitle"></h2>
+        <p id="reminderDescription"></p>
+        <time id="reminderTime"></time>
+        <button class="reminder-ack-btn" id="reminderAckBtn" type="button">
+            Acknowledge
+        </button>
+    </section>
 
     <!-- ================= Main ================= -->
     <main class="stage">
@@ -101,6 +130,14 @@
 
         <!-- Prompt Bar -->
         <section class="prompt-zone">
+
+            <div class="reply-context hidden" id="replyContext">
+                <div>
+                    <span class="reply-context-label">Replying on WhatsApp</span>
+                    <strong id="replyContactName"></strong>
+                </div>
+                <button id="cancelReplyBtn" type="button" aria-label="Cancel WhatsApp reply">×</button>
+            </div>
 
             <div class="prompt-bar" id="promptBar">
 
@@ -147,6 +184,7 @@
     <footer class="statusbar">
         <span class="pill"><span class="pill-dot ok"></span>Memory Connected</span>
         <span class="pill"><span class="pill-dot ok"></span>Planner Ready</span>
+        <span class="pill" id="whatsappStatus"><span class="pill-dot pending"></span>WhatsApp Connecting</span>
         <span class="pill pill-muted">v1.0</span>
     </footer>
 

@@ -5,12 +5,20 @@ import traceback
 from fastapi import APIRouter, HTTPException
 from langchain_core.messages import HumanMessage, AIMessage
 
-from schemas import ChatRequest, ChatResponse, EndSessionRequest, EndSessionResponse
+from schemas import (
+    ChatRequest,
+    ChatResponse,
+    EndSessionRequest,
+    EndSessionResponse,
+    ReminderAcknowledgeRequest,
+)
 from graph import app
 from session_store import add_turn, get_turns, pop_session
 from token_utils import count_tokens
 from Server.postgre_insert import insert_chat_history_batch
 from Server.postgre_search import fetch_conversation_history, fetch_user_facts
+from mcp_servers.whatsappmeow.client import whatsapp_client
+from mcp_servers.reminder.client import reminder_client
 
 router = APIRouter()
 
@@ -41,6 +49,8 @@ async def chat(request: ChatRequest):
         state = {
             # Conversation - now includes everything said earlier in this
             # session, not just the latest message
+            "conversation_id": conversation_id,
+            "user_id": user_id,
             "messages": [*history_messages, HumanMessage(content=request.message)],
             "user_input": request.message,
             "user_facts": user_facts,
@@ -57,6 +67,7 @@ async def chat(request: ChatRequest):
             # Planner
             "execution_plan": [],
             "current_step": 0,
+            "planner_result": None,
 
             # Execution
             "artifacts": {},
@@ -88,6 +99,7 @@ async def chat(request: ChatRequest):
             response=response_text,
             conversation_id=conversation_id,
             success=True,
+            artifact=(result.get("artifacts") or {}).get("expense_report"),
         )
 
     except Exception:
@@ -132,5 +144,62 @@ async def end_session(request: EndSessionRequest):
 async def health():
     return {
         "status": "online",
-        "assistant": "ready"
+        "assistant": "ready",
+        "whatsapp": whatsapp_client.status,
+        "reminders": reminder_client.status,
     }
+
+
+@router.get("/whatsapp/messages")
+async def whatsapp_messages(after_id: int | None = None, limit: int = 50):
+    """Poll new inbound WhatsApp messages for the browser UI."""
+    try:
+        return await whatsapp_client.poll_messages(
+            after_id=after_id,
+            limit=max(1, min(limit, 200)),
+        )
+    except Exception as exc:
+        # A normal JSON response lets the UI show an offline state without
+        # generating a noisy failed HTTP request every polling interval.
+        return {
+            "cursor": after_id,
+            "messages": [],
+            "connected": False,
+            "error": str(exc),
+        }
+
+
+@router.get("/whatsapp/contacts")
+async def whatsapp_contacts(query: str = ""):
+    """Expose the name/number mapping used by contact disambiguation."""
+    try:
+        return await whatsapp_client.list_contacts(query)
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@router.get("/reminders/due")
+async def due_reminders(user_id: str = "mayur", limit: int = 50):
+    """Return pending reminders whose scheduled time has passed."""
+    try:
+        return await reminder_client.due_reminders(
+            user_id=user_id,
+            limit=max(1, min(limit, 200)),
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@router.post("/reminders/{reminder_id}/acknowledge")
+async def acknowledge_reminder(
+    reminder_id: str,
+    request: ReminderAcknowledgeRequest,
+):
+    """Acknowledge a reminder and delete it from PostgreSQL."""
+    try:
+        return await reminder_client.acknowledge(
+            reminder_id=reminder_id,
+            user_id=request.user_id,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc

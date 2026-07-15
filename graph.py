@@ -7,6 +7,7 @@ from graph_state import GraphState
 
 from Agent_Definations.orchestrator import orchestrator_node
 from Agent_Definations.memory import memory_node
+from Agent_Definations.planner import planner_node
 from Agent_Definations.respond import respond_node
 
 load_dotenv()
@@ -19,10 +20,8 @@ workflow = StateGraph(GraphState)
 
 workflow.add_node("orchestrator", orchestrator_node)
 workflow.add_node("memory", memory_node)
+workflow.add_node("planner", planner_node)
 workflow.add_node("respond", respond_node)
-
-# Planner node will be added later
-# workflow.add_node("planner", planner_node)
 
 # ------------------------
 # Entry
@@ -42,7 +41,7 @@ workflow.add_conditional_edges(
     "orchestrator",
     orchestrator_router,
     {
-        "planner": END,                 # Add planner node later
+        "planner": "planner",
         "memory": "memory",
         "planner_with_memory": END,     # Later -> memory -> planner
         "respond": "respond",
@@ -56,6 +55,11 @@ workflow.add_conditional_edges(
 
 workflow.add_edge(
     "memory",
+    "respond",
+)
+
+workflow.add_edge(
+    "planner",
     "respond",
 )
 
@@ -77,6 +81,8 @@ app = workflow.compile()
 # ------------------------
 
 state = {
+    "conversation_id": "graph-manual-test",
+    "user_id": "mayur",
     "messages": [
         HumanMessage(content="Can you add expense for travel 100 rupees on 10th July 2026")
     ],
@@ -96,6 +102,7 @@ state = {
     # Planner
     "execution_plan": [],
     "current_step": 0,
+    "planner_result": None,
 
     # Execution
     "artifacts": {},
