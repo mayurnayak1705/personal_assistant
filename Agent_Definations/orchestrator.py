@@ -2,6 +2,7 @@ from typing import Literal
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 from graph_state import GraphState
+from working_context import context_instructions
 
 from dotenv import load_dotenv
 
@@ -95,6 +96,26 @@ Examples include "remind me to mail XYZ after 30 minutes", "remind me
 tomorrow at 9", and "show my reminders". Reminder execution is a Planner
 action, not a Memory Agent operation.
 
+All requests to create, list, search, update, complete, reopen, reschedule,
+cancel, delete, or undo a task/todo MUST use:
+
+"intent": "task_management"
+"routing_decision": "planner"
+
+Examples include "add a task to send the report", "what tasks are due today?",
+"mark the report task complete", "move that task to tomorrow", and "undo my
+last task change". A task tracks work; requests phrased as "remind me" remain
+reminder_management.
+
+All requests to read, search, draft, send, reply to, archive, mark read,
+schedule, list scheduled, or cancel a Gmail email MUST use:
+
+"intent": "email_management"
+"routing_decision": "planner"
+
+Examples include "show my unread emails", "draft an email to X", "send this
+email", "reply to that message", and "schedule an email tomorrow at 9".
+
 ---
 
 ### memory
@@ -127,10 +148,8 @@ This includes (but is not limited to):
 - Meeting notes
 - Bookmarks
 
-#### Tasks & Reminders
-- Saved tasks
-- Todos
-- Reminders
+#### Reminders
+- Stored reminder memories that are not time-based reminder actions
 
 #### Financial Memory
 - Expenses
@@ -285,6 +304,7 @@ The following intents are fixed and MUST always be returned exactly as written.
 - question_answering
 - whatsapp_messaging
 - reminder_management
+- task_management
 
 For any expense-related request, the intent MUST ALWAYS be:
 
@@ -401,6 +421,10 @@ def orchestrator_node(state: GraphState):
     messages = [
         SystemMessage(content=system_prompt)
     ]
+
+    messages.append(
+        SystemMessage(content=context_instructions(state.get("working_context", [])))
+    )
 
     # ---------------------------------------------------------
     # Inject Retrieved User Facts

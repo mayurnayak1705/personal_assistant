@@ -5,6 +5,7 @@ from datetime import datetime
 from mcp import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
 from openai import OpenAI
+from working_context import ToolExecutionResult, build_tool_event
 
 
 class ExpenseMCPClient:
@@ -53,21 +54,36 @@ Resolve relative dates such as today, this week, this month, and this year befor
                 ]
                 response = self.openai.responses.create(model=self.model, input=messages, tools=tools)
                 artifact = None
+                events = []
 
                 while True:
                     calls = [item for item in response.output if item.type == "function_call"]
                     if not calls:
-                        return {"text": response.output_text, "artifact": artifact}
+                        return ToolExecutionResult(
+                            text=response.output_text,
+                            events=events,
+                            artifact=artifact,
+                        )
 
                     outputs = []
                     for call in calls:
-                        result = await session.call_tool(call.name, json.loads(call.arguments))
+                        arguments = json.loads(call.arguments)
+                        result = await session.call_tool(call.name, arguments)
                         output = "\n".join(
                             block.text for block in result.content if hasattr(block, "text")
                         ) if result.content else ""
                         parsed_artifact = self._parse_artifact(output)
                         if parsed_artifact:
                             artifact = parsed_artifact
+                        events.append(
+                            build_tool_event(
+                                integration="expenses",
+                                tool_name=call.name,
+                                arguments=arguments,
+                                output=output,
+                                is_error=bool(getattr(result, "isError", False)),
+                            )
+                        )
                         outputs.append({
                             "type": "function_call_output",
                             "call_id": call.call_id,

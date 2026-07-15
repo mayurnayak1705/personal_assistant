@@ -1,4 +1,4 @@
-"""Persistent MCP client used by the planner and reminder notification API."""
+"""Persistent Tasks MCP client for planner and notification APIs."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ import json
 import os
 import sys
 from contextlib import AsyncExitStack
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Iterable
 from zoneinfo import ZoneInfo
@@ -21,7 +21,7 @@ from working_context import ToolExecutionResult, build_tool_event
 load_dotenv()
 
 
-class ReminderMCPClient:
+class TasksMCPClient:
     def __init__(self, model: str = "gpt-4o-mini") -> None:
         self.model = model
         self.project_root = Path(__file__).resolve().parents[2]
@@ -49,7 +49,7 @@ class ReminderMCPClient:
                 return
             params = StdioServerParameters(
                 command=sys.executable,
-                args=["-m", "mcp_servers.reminder.server"],
+                args=["-m", "mcp_servers.tasks.server"],
                 cwd=self.project_root,
                 env=os.environ.copy(),
             )
@@ -60,7 +60,7 @@ class ReminderMCPClient:
                 await session.initialize()
             except Exception as exc:
                 await stack.aclose()
-                self._start_error = f"Reminder MCP is unavailable: {exc}"
+                self._start_error = f"Tasks MCP is unavailable: {exc}"
                 raise RuntimeError(self._start_error) from exc
             self._stack = stack
             self._session = session
@@ -85,19 +85,46 @@ class ReminderMCPClient:
         )
         return text, bool(getattr(result, "isError", False))
 
-    async def due_reminders(self, user_id: str, limit: int = 50) -> dict[str, Any]:
+    async def notification_tasks(self, user_id: str, limit: int = 50) -> dict[str, Any]:
         text, is_error = await self._call_tool(
-            "list_due_reminders",
-            {"user_id": user_id, "limit": limit},
+            "list_tasks",
+            {"user_id": user_id, "view": "due", "limit": limit},
         )
         if is_error:
             raise RuntimeError(text)
         return json.loads(text)
 
-    async def acknowledge(self, reminder_id: str, user_id: str) -> dict[str, Any]:
+    async def list_tasks(
+        self,
+        *,
+        user_id: str,
+        view: str = "all",
+        limit: int = 200,
+    ) -> dict[str, Any]:
+        """Return tasks for the dedicated task-management panel."""
         text, is_error = await self._call_tool(
-            "acknowledge_reminder",
-            {"reminder_id": reminder_id, "user_id": user_id},
+            "list_tasks",
+            {"user_id": user_id, "view": view, "limit": limit},
+        )
+        if is_error:
+            raise RuntimeError(text)
+        return json.loads(text)
+
+    async def complete(self, task_id: str, user_id: str) -> dict[str, Any]:
+        text, is_error = await self._call_tool(
+            "complete_task",
+            {"task_id": task_id, "user_id": user_id},
+        )
+        if is_error:
+            raise RuntimeError(text)
+        return json.loads(text)
+
+    async def postpone_until_tomorrow(self, task_id: str, user_id: str) -> dict[str, Any]:
+        tomorrow = datetime.now(self.timezone) + timedelta(days=1)
+        tomorrow = tomorrow.replace(hour=9, minute=0, second=0, microsecond=0)
+        text, is_error = await self._call_tool(
+            "update_task",
+            {"task_id": task_id, "user_id": user_id, "due_at": tomorrow.isoformat()},
         )
         if is_error:
             raise RuntimeError(text)
@@ -105,7 +132,7 @@ class ReminderMCPClient:
 
     @staticmethod
     def _conversation_input(messages: Iterable[Any]) -> list[dict[str, str]]:
-        output: list[dict[str, str]] = []
+        output = []
         for message in messages:
             message_type = getattr(message, "type", "")
             if message_type in {"human", "ai"}:
@@ -143,8 +170,7 @@ class ReminderMCPClient:
         date_context = (
             f"Current datetime: {now.isoformat(timespec='seconds')}\n"
             f"Timezone: {self.timezone.key}\n"
-            "Resolve relative times such as 'after 30 minutes' from this exact datetime. "
-            "Pass reminder_time as an ISO-8601 datetime with timezone offset."
+            "Resolve relative task due dates from this datetime and pass due_at as ISO-8601."
         )
         conversation = self._conversation_input(messages)
         if not conversation or conversation[-1].get("content") != user_input:
@@ -152,47 +178,33 @@ class ReminderMCPClient:
 
         response = await self._openai.responses.create(
             model=self.model,
-            input=[
-                {"role": "system", "content": date_context + "\n\n" + system_prompt},
-                *conversation,
-            ],
+            input=[{"role": "system", "content": date_context + "\n\n" + system_prompt}, *conversation],
             tools=tools,
         )
         events: list[dict[str, Any]] = []
-
-        for _ in range(8):
-            tool_calls = [item for item in response.output if item.type == "function_call"]
-            if not tool_calls:
+        for _ in range(10):
+            calls = [item for item in response.output if item.type == "function_call"]
+            if not calls:
                 return ToolExecutionResult(
-                    text=response.output_text or "The reminder request did not produce a response.",
+                    text=response.output_text or "The task request did not produce a response.",
                     events=events,
                 )
-
-            outputs: list[dict[str, str]] = []
-            for tool_call in tool_calls:
-                arguments = json.loads(tool_call.arguments or "{}")
-                if tool_call.name in {
-                    "create_reminder",
-                    "list_due_reminders",
-                    "acknowledge_reminder",
-                }:
-                    arguments["user_id"] = user_id
-                result, is_error = await self._call_tool(tool_call.name, arguments)
+            outputs = []
+            for call in calls:
+                arguments = json.loads(call.arguments or "{}")
+                arguments["user_id"] = user_id
+                result, is_error = await self._call_tool(call.name, arguments)
                 events.append(
                     build_tool_event(
-                        integration="reminders",
-                        tool_name=tool_call.name,
+                        integration="tasks",
+                        tool_name=call.name,
                         arguments=arguments,
                         output=result,
                         is_error=is_error,
                     )
                 )
                 outputs.append(
-                    {
-                        "type": "function_call_output",
-                        "call_id": tool_call.call_id,
-                        "output": result,
-                    }
+                    {"type": "function_call_output", "call_id": call.call_id, "output": result}
                 )
             response = await self._openai.responses.create(
                 model=self.model,
@@ -200,11 +212,10 @@ class ReminderMCPClient:
                 input=outputs,
                 tools=tools,
             )
-
         return ToolExecutionResult(
-            text="I could not complete the reminder request after several tool steps.",
+            text="I could not complete the task request after several tool steps.",
             events=events,
         )
 
 
-reminder_client = ReminderMCPClient()
+tasks_client = TasksMCPClient()

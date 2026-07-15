@@ -18,6 +18,7 @@ class ChatResponse(BaseModel):
     conversation_id: str
     success: bool = True
     artifact: Optional[dict[str, Any]] = None
+    suggestion: Optional[dict[str, str]] = None
 
 
 class EndSessionRequest(BaseModel):
@@ -32,3 +33,18 @@ class EndSessionResponse(BaseModel):
 
 class ReminderAcknowledgeRequest(BaseModel):
     user_id: str = "mayur"
+    conversation_id: Optional[str] = None
+
+
+class TaskActionRequest(BaseModel):
+    user_id: str = "mayur"
+    conversation_id: Optional[str] = None
+
+
+class WhatsAppToggleRequest(BaseModel):
+    enabled: bool
+
+
+class GmailActionRequest(BaseModel):
+    user_id: str = "mayur"
+    conversation_id: Optional[str] = None

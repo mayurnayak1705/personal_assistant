@@ -1,6 +1,7 @@
 import asyncio
 import uuid
 import traceback
+import logging
 
 from fastapi import APIRouter, HTTPException
 from langchain_core.messages import HumanMessage, AIMessage
@@ -11,6 +12,9 @@ from schemas import (
     EndSessionRequest,
     EndSessionResponse,
     ReminderAcknowledgeRequest,
+    TaskActionRequest,
+    WhatsAppToggleRequest,
+    GmailActionRequest,
 )
 from graph import app
 from session_store import add_turn, get_turns, pop_session
@@ -19,8 +23,50 @@ from Server.postgre_insert import insert_chat_history_batch
 from Server.postgre_search import fetch_conversation_history, fetch_user_facts
 from mcp_servers.whatsappmeow.client import whatsapp_client
 from mcp_servers.reminder.client import reminder_client
+from mcp_servers.tasks.client import tasks_client
+from mcp_servers.gmail.client import gmail_client
+from action_history_store import fetch_action_history, save_action_history_events
+from follow_up_suggestions import choose_follow_up
+from working_context import build_tool_event
+from working_context_store import fetch_working_context, save_working_context_events
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
+
+
+async def _record_action_events(
+    *,
+    conversation_id: str,
+    user_id: str,
+    events: list[dict],
+) -> dict | None:
+    if not events:
+        return None
+
+    # A suggestion is computed from the same immutable events as history.
+    # It never executes automatically and at most one is returned per turn.
+    suggestion = choose_follow_up(events)
+    writes = await asyncio.gather(
+        asyncio.to_thread(
+            save_working_context_events,
+            conversation_id=conversation_id,
+            user_id=user_id,
+            events=events,
+        ),
+        asyncio.to_thread(
+            save_action_history_events,
+            conversation_id=conversation_id,
+            user_id=user_id,
+            events=events,
+        ),
+        return_exceptions=True,
+    )
+    for store_name, result in zip(("working context", "action history"), writes):
+        if isinstance(result, Exception):
+            # Persistence is an enhancement; it must never turn a successful
+            # external action into a reported failure.
+            logger.warning("Could not persist %s: %s", store_name, result)
+    return suggestion
 
 
 @router.post("/chat", response_model=ChatResponse)
@@ -29,6 +75,16 @@ async def chat(request: ChatRequest):
     try:
         conversation_id = request.conversation_id or str(uuid.uuid4())
         user_id = request.user_id or "mayur"
+
+        try:
+            working_context = await asyncio.to_thread(
+                fetch_working_context,
+                conversation_id=conversation_id,
+                user_id=user_id,
+            )
+        except Exception as exc:
+            logger.warning("Could not load working context: %s", exc)
+            working_context = []
 
         # Context from earlier in this chat: prefer the in-memory session
         # buffer (cheap, no DB round-trip). If it's empty — server restarted
@@ -54,6 +110,7 @@ async def chat(request: ChatRequest):
             "messages": [*history_messages, HumanMessage(content=request.message)],
             "user_input": request.message,
             "user_facts": user_facts,
+            "working_context": working_context,
             # Orchestrator
             "intent": "",
             "routing_decision": "",
@@ -90,6 +147,12 @@ async def chat(request: ChatRequest):
         )
         response_text = str(response_text)
 
+        suggestion = await _record_action_events(
+            conversation_id=conversation_id,
+            user_id=user_id,
+            events=(result.get("tool_results") or {}).get("events", []),
+        )
+
         # Buffer this turn. It isn't written to Postgres yet — that happens
         # once, in a batch, when the session ends (see /session/end below).
         await add_turn(conversation_id, "user", request.message, count_tokens(request.message))
@@ -100,6 +163,7 @@ async def chat(request: ChatRequest):
             conversation_id=conversation_id,
             success=True,
             artifact=(result.get("artifacts") or {}).get("expense_report"),
+            suggestion=suggestion,
         )
 
     except Exception:
@@ -147,17 +211,142 @@ async def health():
         "assistant": "ready",
         "whatsapp": whatsapp_client.status,
         "reminders": reminder_client.status,
+        "tasks": tasks_client.status,
+        "gmail": gmail_client.status,
     }
 
 
-@router.get("/whatsapp/messages")
-async def whatsapp_messages(after_id: int | None = None, limit: int = 50):
-    """Poll new inbound WhatsApp messages for the browser UI."""
+@router.get("/actions/recent")
+async def recent_actions(
+    user_id: str = "mayur",
+    conversation_id: str | None = None,
+    limit: int = 50,
+):
+    """Return structured durable history for audit and future assistant features."""
     try:
-        return await whatsapp_client.poll_messages(
+        return {
+            "actions": await asyncio.to_thread(
+                fetch_action_history,
+                user_id=user_id,
+                conversation_id=conversation_id,
+                limit=limit,
+            )
+        }
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@router.get("/gmail/status")
+async def gmail_status():
+    """Return Gmail OAuth connection status without exposing token data."""
+    try:
+        return await gmail_client.connection_status()
+    except Exception as exc:
+        return {"authenticated": False, "email": None, "error": str(exc)}
+
+
+@router.get("/gmail/unread")
+async def gmail_unread(limit: int = 20):
+    """Return unread inbox messages for the Gmail UI panel."""
+    try:
+        return await gmail_client.unread_emails(limit=max(1, min(limit, 50)))
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@router.get("/gmail/scheduled")
+async def gmail_scheduled(user_id: str = "mayur", limit: int = 20):
+    try:
+        return await gmail_client.scheduled_emails(user_id=user_id, limit=max(1, min(limit, 50)))
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@router.post("/gmail/messages/{message_id}/read")
+async def gmail_mark_read(message_id: str, request: GmailActionRequest):
+    try:
+        result = await gmail_client.mark_read(message_id)
+        await _record_action_events(
+            conversation_id=request.conversation_id or f"ui:{request.user_id}",
+            user_id=request.user_id,
+            events=[build_tool_event(integration="gmail", tool_name="mark_email_read", arguments={"message_id": message_id}, output=result)],
+        )
+        return result
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@router.post("/gmail/messages/{message_id}/archive")
+async def gmail_archive(message_id: str, request: GmailActionRequest):
+    try:
+        result = await gmail_client.archive(message_id)
+        await _record_action_events(
+            conversation_id=request.conversation_id or f"ui:{request.user_id}",
+            user_id=request.user_id,
+            events=[build_tool_event(integration="gmail", tool_name="archive_email", arguments={"message_id": message_id}, output=result)],
+        )
+        return result
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@router.post("/gmail/scheduled/{schedule_id}/cancel")
+async def gmail_cancel_scheduled(schedule_id: str, request: GmailActionRequest):
+    try:
+        result = await gmail_client.cancel_scheduled(schedule_id, request.user_id)
+        await _record_action_events(
+            conversation_id=request.conversation_id or f"ui:{request.user_id}",
+            user_id=request.user_id,
+            events=[build_tool_event(
+                integration="gmail",
+                tool_name="cancel_scheduled_email",
+                arguments={"schedule_id": schedule_id, "user_id": request.user_id},
+                output=result,
+                is_error=result.get("status") == "not_found",
+            )],
+        )
+        return result
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@router.get("/whatsapp/messages")
+async def whatsapp_messages(
+    after_id: int | None = None,
+    limit: int = 50,
+    user_id: str = "mayur",
+    conversation_id: str | None = None,
+):
+    """Poll new inbound WhatsApp messages for the browser UI."""
+    if not whatsapp_client.enabled:
+        return {
+            "cursor": after_id,
+            "messages": [],
+            "enabled": False,
+            "connected": False,
+        }
+    try:
+        payload = await whatsapp_client.poll_messages(
             after_id=after_id,
             limit=max(1, min(limit, 200)),
         )
+        payload["enabled"] = True
+        payload["connected"] = whatsapp_client.connected
+        inbound_events = [
+            build_tool_event(
+                integration="whatsapp",
+                tool_name="receive_message",
+                arguments={},
+                output={"message": message},
+            )
+            for message in payload.get("messages", [])
+        ]
+        await _record_action_events(
+            conversation_id=conversation_id or f"ui:{user_id}",
+            user_id=user_id,
+            events=inbound_events,
+        )
+        return payload
     except Exception as exc:
         # A normal JSON response lets the UI show an offline state without
         # generating a noisy failed HTTP request every polling interval.
@@ -165,13 +354,36 @@ async def whatsapp_messages(after_id: int | None = None, limit: int = 50):
             "cursor": after_id,
             "messages": [],
             "connected": False,
+            "enabled": whatsapp_client.enabled,
             "error": str(exc),
         }
+
+
+@router.get("/whatsapp/state")
+async def whatsapp_state():
+    """Return the persisted WhatsApp integration state."""
+    return whatsapp_client.status
+
+
+@router.put("/whatsapp/state")
+async def update_whatsapp_state(request: WhatsAppToggleRequest):
+    """Enable or disable all WhatsApp sending and receiving."""
+    try:
+        return await whatsapp_client.set_enabled(request.enabled)
+    except Exception as exc:
+        # Return the state as well as the error so the UI can accurately show
+        # an enabled integration that failed to connect.
+        raise HTTPException(
+            status_code=503,
+            detail={**whatsapp_client.status, "error": str(exc)},
+        ) from exc
 
 
 @router.get("/whatsapp/contacts")
 async def whatsapp_contacts(query: str = ""):
     """Expose the name/number mapping used by contact disambiguation."""
+    if not whatsapp_client.enabled:
+        raise HTTPException(status_code=409, detail="WhatsApp integration is turned off")
     try:
         return await whatsapp_client.list_contacts(query)
     except Exception as exc:
@@ -197,9 +409,95 @@ async def acknowledge_reminder(
 ):
     """Acknowledge a reminder and delete it from PostgreSQL."""
     try:
-        return await reminder_client.acknowledge(
+        result = await reminder_client.acknowledge(
             reminder_id=reminder_id,
             user_id=request.user_id,
         )
+        suggestion = await _record_action_events(
+            conversation_id=request.conversation_id or f"ui:{request.user_id}",
+            user_id=request.user_id,
+            events=[build_tool_event(
+                integration="reminders",
+                tool_name="acknowledge_reminder",
+                arguments={"reminder_id": reminder_id, "user_id": request.user_id},
+                output=result,
+                is_error=result.get("status") == "not_found",
+            )],
+        )
+        return {**result, "suggestion": suggestion}
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@router.get("/tasks/notifications")
+async def task_notifications(user_id: str = "mayur", limit: int = 50):
+    """Return open tasks that are due now or overdue for the notification panel."""
+    try:
+        return await tasks_client.notification_tasks(
+            user_id=user_id,
+            limit=max(1, min(limit, 200)),
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@router.get("/tasks")
+async def list_tasks(user_id: str = "mayur", view: str = "all", limit: int = 200):
+    """Return task records and statuses for the dedicated Tasks panel."""
+    try:
+        return await tasks_client.list_tasks(
+            user_id=user_id,
+            view=view,
+            limit=max(1, min(limit, 200)),
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@router.post("/tasks/{task_id}/complete")
+async def complete_task(task_id: str, request: TaskActionRequest):
+    """Complete one task from the notification panel."""
+    try:
+        result = await tasks_client.complete(task_id=task_id, user_id=request.user_id)
+        suggestion = await _record_action_events(
+            conversation_id=request.conversation_id or f"ui:{request.user_id}",
+            user_id=request.user_id,
+            events=[build_tool_event(
+                integration="tasks",
+                tool_name="complete_task",
+                arguments={"task_id": task_id, "user_id": request.user_id},
+                output=result,
+                is_error=result.get("status") == "not_found",
+            )],
+        )
+        return {**result, "suggestion": suggestion}
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@router.post("/tasks/{task_id}/tomorrow")
+async def postpone_task_until_tomorrow(task_id: str, request: TaskActionRequest):
+    """Move one due task to tomorrow at 09:00 local time."""
+    try:
+        result = await tasks_client.postpone_until_tomorrow(
+            task_id=task_id,
+            user_id=request.user_id,
+        )
+        suggestion = await _record_action_events(
+            conversation_id=request.conversation_id or f"ui:{request.user_id}",
+            user_id=request.user_id,
+            events=[build_tool_event(
+                integration="tasks",
+                tool_name="update_task",
+                arguments={
+                    "task_id": task_id,
+                    "user_id": request.user_id,
+                    "relative_due": "tomorrow 09:00",
+                },
+                output=result,
+                is_error=result.get("status") == "not_found",
+            )],
+        )
+        return {**result, "suggestion": suggestion}
     except Exception as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc

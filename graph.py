@@ -88,6 +88,7 @@ state = {
     ],
 
     "user_input": "Can you add expense for travel 100 rupees on 10th July 2026",
+    "working_context": [],
 
     # Orchestrator
     "intent": "",

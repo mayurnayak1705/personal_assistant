@@ -20,6 +20,7 @@ from dotenv import load_dotenv
 from mcp import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
 from openai import AsyncOpenAI
+from working_context import ToolExecutionResult, build_tool_event
 
 load_dotenv()
 
@@ -35,6 +36,8 @@ class WhatsAppMCPClient:
         self._call_lock = asyncio.Lock()
         self._last_start_attempt = 0.0
         self._start_error: str | None = None
+        self._state_path = self.server_dir / "integration-state.json"
+        self._enabled = self._load_enabled_state()
         # Refreshed from list_contacts. The WhatsApp contact store remains the
         # persistent source of truth; this map gives the planner fast, explicit
         # name -> candidate-number visibility for the current process.
@@ -49,13 +52,60 @@ class WhatsAppMCPClient:
         return self._session is not None
 
     @property
+    def enabled(self) -> bool:
+        return self._enabled
+
+    @property
     def status(self) -> dict[str, Any]:
         return {
+            "enabled": self.enabled,
             "connected": self.connected,
             "error": self._start_error,
         }
 
+    def _load_enabled_state(self) -> bool:
+        try:
+            payload = json.loads(self._state_path.read_text(encoding="utf-8"))
+            return bool(payload.get("enabled", True))
+        except (FileNotFoundError, OSError, json.JSONDecodeError, AttributeError):
+            return True
+
+    def _persist_enabled_state(self) -> None:
+        temporary = self._state_path.with_suffix(".tmp")
+        temporary.write_text(
+            json.dumps({"enabled": self._enabled}, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        temporary.replace(self._state_path)
+
+    async def start_if_enabled(self) -> None:
+        if self.enabled:
+            await self.start()
+
+    async def set_enabled(self, enabled: bool) -> dict[str, Any]:
+        enabled = bool(enabled)
+        if enabled == self._enabled:
+            if enabled and not self.connected:
+                await self.start()
+            return self.status
+
+        self._enabled = enabled
+        self._persist_enabled_state()
+        self.pending_sends.clear()
+
+        if enabled:
+            await self.start()
+        else:
+            # Wait for any in-flight send/poll to finish before disconnecting.
+            async with self._call_lock:
+                await self.stop()
+            self.contact_map.clear()
+            self._start_error = None
+        return self.status
+
     async def start(self) -> None:
+        if not self.enabled:
+            raise RuntimeError("WhatsApp integration is turned off.")
         if self._session is not None:
             return
 
@@ -112,6 +162,8 @@ class WhatsAppMCPClient:
                 await stack.aclose()
 
     async def _call_tool(self, name: str, arguments: dict[str, Any]) -> tuple[str, bool]:
+        if not self.enabled:
+            raise RuntimeError("WhatsApp integration is turned off. Turn it on before sending or receiving messages.")
         await self.start()
         assert self._session is not None
         async with self._call_lock:
@@ -240,6 +292,7 @@ class WhatsAppMCPClient:
         self,
         conversation_id: str,
         user_input: str,
+        events: list[dict[str, Any]],
     ) -> str | None:
         pending = self.pending_sends.get(conversation_id)
         if not pending:
@@ -261,6 +314,18 @@ class WhatsAppMCPClient:
                 "message": pending["message"],
             },
         )
+        events.append(
+            build_tool_event(
+                integration="whatsapp",
+                tool_name="send_message",
+                arguments={
+                    "contact": selected["phone_number"],
+                    "message": pending["message"],
+                },
+                output=output,
+                is_error=is_error,
+            )
+        )
         if not is_error:
             self.pending_sends.pop(conversation_id, None)
         return output
@@ -271,14 +336,15 @@ class WhatsAppMCPClient:
         user_input: str,
         system_prompt: str,
         messages: Iterable[Any] = (),
-    ) -> str:
+    ) -> ToolExecutionResult:
         """Let the planner use MCP tools, with contact safety enforced in code."""
         await self.start()
         assert self._session is not None
 
-        pending_result = await self._continue_pending_send(conversation_id, user_input)
+        events: list[dict[str, Any]] = []
+        pending_result = await self._continue_pending_send(conversation_id, user_input, events)
         if pending_result is not None:
-            return pending_result
+            return ToolExecutionResult(text=pending_result, events=events)
 
         async with self._call_lock:
             listed = await self._session.list_tools()
@@ -334,7 +400,10 @@ class WhatsAppMCPClient:
                     )
                     send_nudged = True
                     continue
-                return response.output_text or "The WhatsApp request did not produce a response."
+                return ToolExecutionResult(
+                    text=response.output_text or "The WhatsApp request did not produce a response.",
+                    events=events,
+                )
 
             outputs: list[dict[str, str]] = []
             for tool_call in tool_calls:
@@ -355,14 +424,26 @@ class WhatsAppMCPClient:
                             "message": str(arguments.get("message", "")),
                             "contacts": contacts,
                         }
-                        return self._contact_question(contacts)
+                        return ToolExecutionResult(text=self._contact_question(contacts), events=events)
                     if not contacts:
-                        return f'I could not find a WhatsApp contact matching "{recipient}". Who should I message?'
+                        return ToolExecutionResult(
+                            text=f'I could not find a WhatsApp contact matching "{recipient}". Who should I message?',
+                            events=events,
+                        )
                     # Address by the exact number returned by the contact store,
                     # never by an ambiguous display name.
                     arguments["contact"] = contacts[0]["phone_number"]
 
-                output, _ = await self._call_tool(tool_call.name, arguments)
+                output, is_error = await self._call_tool(tool_call.name, arguments)
+                events.append(
+                    build_tool_event(
+                        integration="whatsapp",
+                        tool_name=tool_call.name,
+                        arguments=arguments,
+                        output=output,
+                        is_error=is_error,
+                    )
+                )
                 outputs.append(
                     {
                         "type": "function_call_output",
@@ -378,7 +459,10 @@ class WhatsAppMCPClient:
                 tools=tools,
             )
 
-        return "I could not complete the WhatsApp request after several tool steps."
+        return ToolExecutionResult(
+            text="I could not complete the WhatsApp request after several tool steps.",
+            events=events,
+        )
 
 
 whatsapp_client = WhatsAppMCPClient()

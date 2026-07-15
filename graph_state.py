@@ -24,6 +24,7 @@ class GraphState(TypedDict):
     messages: Annotated[list[BaseMessage], add_messages]
     user_input: str
     user_facts: str
+    working_context: list[dict[str, Any]]
     # Orchestrator Output
     intent: str
     routing_decision: str

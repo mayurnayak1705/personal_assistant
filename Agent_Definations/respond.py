@@ -3,6 +3,7 @@ from langchain_openai import ChatOpenAI
 
 from graph_state import GraphState
 from conversation_utils import format_conversation
+from working_context import format_working_context
 
 llm = ChatOpenAI(model="gpt-4.1")
 
@@ -122,6 +123,9 @@ Memory Result:
 
 Planner Result:
 {state.get("planner_result", None)}
+
+Recent Successful Tool Actions:
+{format_working_context(state.get("working_context", []))}
 
 Clarification Question:
 {state.get("clarification_question", "")}

@@ -10,6 +10,7 @@ from conversation_utils import format_conversation
 
 from client import MCPClient
 from mcp_servers.expense.client import expense_client
+from working_context import context_instructions
 
 llm = ChatOpenAI(model="gpt-4.1")
 
@@ -361,12 +362,13 @@ async def memory_node(state: GraphState):
     print("========== Memory NODE ==========")
 
     if state["intent"] == "expense_tracking":
-        response = await expense_client.execute(
+        execution = await expense_client.execute(
             user_input=format_conversation(state.get("messages", [])),
-            system_prompt=EXPENSE_SYSTEM_PROMPT,
+            system_prompt=EXPENSE_SYSTEM_PROMPT + context_instructions(state.get("working_context", [])),
         )
-        response_text = response["text"]
-        artifacts = {"expense_report": response["artifact"]} if response.get("artifact") else {}
+        response_text = execution.text
+        artifacts = {"expense_report": execution.artifact} if execution.artifact else {}
+        events = execution.events
     else:
         response = await memory_client.execute(
             user_input=state["user_input"],
@@ -374,6 +376,7 @@ async def memory_node(state: GraphState):
         )
         response_text = response
         artifacts = {}
+        events = []
 
     print("========== Memory RESPONSE ==========")
     print(response_text)
@@ -385,4 +388,5 @@ async def memory_node(state: GraphState):
             "result": response_text
         },
         "artifacts": artifacts,
+        "tool_results": {"events": events},
     }

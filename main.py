@@ -9,6 +9,10 @@ from fastapi.templating import Jinja2Templates
 from api.routes import router
 from mcp_servers.whatsappmeow.client import whatsapp_client
 from mcp_servers.reminder.client import reminder_client
+from mcp_servers.tasks.client import tasks_client
+from mcp_servers.gmail.client import gmail_client
+from action_history_store import init_action_history_schema
+from working_context_store import init_working_context_schema
 
 logger = logging.getLogger(__name__)
 
@@ -18,8 +22,12 @@ async def lifespan(app: FastAPI):
     # Keep WhatsApp connected for the whole web-app lifetime so incoming
     # events continue to reach the MCP message log even between chat requests.
     services = {
-        "WhatsApp": whatsapp_client.start(),
+        "WhatsApp": whatsapp_client.start_if_enabled(),
         "Reminder": reminder_client.start(),
+        "Tasks": tasks_client.start(),
+        "Gmail": gmail_client.start(),
+        "Working context": asyncio.to_thread(init_working_context_schema),
+        "Action history": asyncio.to_thread(init_action_history_schema),
     }
     results = await asyncio.gather(*services.values(), return_exceptions=True)
     for service_name, result in zip(services, results):
@@ -29,6 +37,8 @@ async def lifespan(app: FastAPI):
     await asyncio.gather(
         whatsapp_client.stop(),
         reminder_client.stop(),
+        tasks_client.stop(),
+        gmail_client.stop(),
         return_exceptions=True,
     )
 

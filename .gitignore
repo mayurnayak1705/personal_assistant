@@ -20,6 +20,9 @@ Databases/**
 chroma.sqlite3
 *.sqlite3
 *.db
+mcp_servers/whatsappmeow/integration-state.json
+mcp_servers/gmail/token.json
+mcp_servers/gmail/client_secret*.json
 
 # macOS
 .DS_Store
