@@ -171,4 +171,10 @@ def dispatch_due_scheduled_emails(limit: int = 10) -> dict:
 
 
 if __name__ == "__main__":
-    mcp.run()
+    try:
+        mcp.run()
+    except* BrokenPipeError:
+        # The parent app may close stdio during reload/shutdown while a final
+        # scheduler response is being written. This is a normal transport
+        # teardown, not a Gmail operation failure.
+        pass

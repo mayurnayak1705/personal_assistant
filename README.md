@@ -14,6 +14,7 @@ Unlike traditional chatbots, this assistant separates **reasoning**, **memory**,
 - 💾 Persistent Memory
 - 📋 Intelligent Task Planning
 - 🔧 MCP Tool Integration
+- 📅 Google Calendar scheduling with automatic Google Meet links and attendee invitations
 - 💰 Expense Tracking
 - 🌐 FastAPI Web Interface
 - 🔍 Long-Term User Memory
@@ -40,6 +41,9 @@ The architecture is built around three core principles:
 - **Workflow orchestration is managed by LangGraph.**
 
 This separation allows new capabilities—such as Gmail, WhatsApp, Calendar, GitHub, or other integrations—to be added as independent MCP servers without modifying the core reasoning logic.
+
+Google Calendar setup and chat examples are documented in
+[`docs/calendar.md`](docs/calendar.md).
 
 
 

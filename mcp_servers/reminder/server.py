@@ -12,6 +12,7 @@ from mcp_servers.reminder.storage import (
     create_reminder_record,
     delete_acknowledged_reminder,
     fetch_due_reminders,
+    fetch_pending_reminders_between,
 )
 
 APP_TIMEZONE = ZoneInfo(os.getenv("APP_TIMEZONE", "Asia/Kolkata"))
@@ -68,6 +69,27 @@ def list_due_reminders(user_id: str, limit: int = 50) -> dict:
         limit=max(1, min(limit, 200)),
     )
     return {"reminders": [_serialize(row) for row in rows]}
+
+
+@mcp.tool()
+def list_reminders(
+    user_id: str,
+    time_min: str,
+    time_max: str,
+    limit: int = 200,
+) -> dict:
+    """List pending reminders in a half-open ISO-8601 time range."""
+    start = _local_naive(time_min)
+    end = _local_naive(time_max)
+    if end <= start:
+        raise ValueError("time_max must be after time_min")
+    rows = fetch_pending_reminders_between(
+        user_id=user_id,
+        start_at=start,
+        end_at=end,
+        limit=limit,
+    )
+    return {"count": len(rows), "reminders": [_serialize(row) for row in rows]}
 
 
 @mcp.tool()

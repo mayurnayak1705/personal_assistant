@@ -116,6 +116,32 @@ schedule, list scheduled, or cancel a Gmail email MUST use:
 Examples include "show my unread emails", "draft an email to X", "send this
 email", "reply to that message", and "schedule an email tomorrow at 9".
 
+All requests to create, schedule, list, search, or cancel Google Calendar
+events or Google Meet meetings MUST use:
+
+"intent": "calendar_management"
+"routing_decision": "planner"
+
+Examples include "schedule a call at 10 PM with x@example.com", "create a
+Google Meet tomorrow", "show my upcoming meetings", and "cancel my 3 PM call".
+
+Requests such as "give me my daily briefing", "what is on my plate today?",
+or "brief me for today" MUST use:
+
+"intent": "daily_briefing"
+"routing_decision": "planner"
+
+Requests to enable, schedule, or change the automatic morning daily briefing
+MUST use:
+
+"intent": "daily_briefing_schedule"
+"routing_decision": "planner"
+
+Examples include "trigger my daily briefing every morning", "schedule my
+daily briefing at 9 am", and a short time-only reply such as "9 am" after the
+assistant asked what time the daily briefing should run. A scheduling request
+must not use daily_briefing because daily_briefing generates the report now.
+
 ---
 
 ### memory
@@ -305,6 +331,10 @@ The following intents are fixed and MUST always be returned exactly as written.
 - whatsapp_messaging
 - reminder_management
 - task_management
+- email_management
+- calendar_management
+- daily_briefing
+- daily_briefing_schedule
 
 For any expense-related request, the intent MUST ALWAYS be:
 

@@ -36,6 +36,7 @@ class GmailMCPClient:
         self._start_lock = asyncio.Lock()
         self._call_lock = asyncio.Lock()
         self._scheduler_task: asyncio.Task | None = None
+        self._scheduler_stop: asyncio.Event | None = None
         self._start_error: str | None = None
 
     @property
@@ -70,14 +71,21 @@ class GmailMCPClient:
             self._stack = stack
             self._session = session
             self._start_error = None
+            self._scheduler_stop = asyncio.Event()
             self._scheduler_task = asyncio.create_task(self._scheduler_loop())
 
     async def stop(self) -> None:
         async with self._start_lock:
             task, self._scheduler_task = self._scheduler_task, None
+            stop_event, self._scheduler_stop = self._scheduler_stop, None
+            if stop_event:
+                stop_event.set()
             if task:
-                task.cancel()
-                await asyncio.gather(task, return_exceptions=True)
+                try:
+                    await asyncio.wait_for(asyncio.shield(task), timeout=10)
+                except asyncio.TimeoutError:
+                    task.cancel()
+                    await asyncio.gather(task, return_exceptions=True)
             stack, self._stack = self._stack, None
             self._session = None
             if stack:
@@ -92,14 +100,20 @@ class GmailMCPClient:
         return text, bool(getattr(result, "isError", False))
 
     async def _scheduler_loop(self) -> None:
-        while True:
+        stop_event = self._scheduler_stop
+        if stop_event is None:
+            return
+        while not stop_event.is_set():
             try:
                 await self._call_tool("dispatch_due_scheduled_emails", {"limit": 10})
             except asyncio.CancelledError:
                 raise
             except Exception:
                 pass
-            await asyncio.sleep(15)
+            try:
+                await asyncio.wait_for(stop_event.wait(), timeout=15)
+            except asyncio.TimeoutError:
+                pass
 
     async def connection_status(self) -> dict[str, Any]:
         text, is_error = await self._call_tool("gmail_status", {})
@@ -109,6 +123,12 @@ class GmailMCPClient:
 
     async def unread_emails(self, limit: int = 20) -> dict[str, Any]:
         text, is_error = await self._call_tool("list_unread_emails", {"limit": limit})
+        if is_error:
+            raise RuntimeError(text)
+        return json.loads(text)
+
+    async def read_email(self, message_id: str) -> dict[str, Any]:
+        text, is_error = await self._call_tool("read_email", {"message_id": message_id})
         if is_error:
             raise RuntimeError(text)
         return json.loads(text)

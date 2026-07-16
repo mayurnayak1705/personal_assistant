@@ -1,4 +1,4 @@
-"""Persistent MCP client used by the planner and reminder notification API."""
+"""Persistent Calendar MCP client used by the planner and API."""
 
 from __future__ import annotations
 
@@ -16,12 +16,26 @@ from dotenv import load_dotenv
 from mcp import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
 from openai import AsyncOpenAI
+
 from working_context import ToolExecutionResult, build_tool_event
+
 
 load_dotenv()
 
 
-class ReminderMCPClient:
+def _friendly_calendar_error(value: str) -> str:
+    text = str(value)
+    if "accessNotConfigured" in text or "calendar-json.googleapis.com" in text and "disabled" in text:
+        return (
+            "The Google Calendar API is disabled for Cloud project 129322372521. "
+            "Enable the Google Calendar API in Google Cloud Console, wait a minute for propagation, and retry."
+        )
+    if "insufficientPermissions" in text or "insufficient authentication scopes" in text.casefold():
+        return "Google Calendar authorization is missing the calendar.events permission. Reconnect Calendar OAuth."
+    return text
+
+
+class CalendarMCPClient:
     def __init__(self, model: str = "gpt-4o-mini") -> None:
         self.model = model
         self.project_root = Path(__file__).resolve().parents[2]
@@ -49,7 +63,7 @@ class ReminderMCPClient:
                 return
             params = StdioServerParameters(
                 command=sys.executable,
-                args=["-m", "mcp_servers.reminder.server"],
+                args=["-m", "mcp_servers.calendar.server"],
                 cwd=self.project_root,
                 env=os.environ.copy(),
             )
@@ -60,7 +74,7 @@ class ReminderMCPClient:
                 await session.initialize()
             except Exception as exc:
                 await stack.aclose()
-                self._start_error = f"Reminder MCP is unavailable: {exc}"
+                self._start_error = f"Calendar MCP is unavailable: {exc}"
                 raise RuntimeError(self._start_error) from exc
             self._stack = stack
             self._session = session
@@ -78,154 +92,109 @@ class ReminderMCPClient:
         assert self._session is not None
         async with self._call_lock:
             result = await self._session.call_tool(name, arguments)
-        text = "\n".join(
-            str(item.text)
-            for item in result.content
-            if getattr(item, "type", None) == "text"
+        output = "\n".join(
+            str(item.text) for item in result.content if getattr(item, "type", None) == "text"
         )
-        return text, bool(getattr(result, "isError", False))
+        return output, bool(getattr(result, "isError", False))
 
-    async def due_reminders(self, user_id: str, limit: int = 50) -> dict[str, Any]:
-        text, is_error = await self._call_tool(
-            "list_due_reminders",
-            {"user_id": user_id, "limit": limit},
-        )
+    async def connection_status(self) -> dict[str, Any]:
+        text, is_error = await self._call_tool("calendar_status", {})
         if is_error:
-            raise RuntimeError(text)
-        return json.loads(text)
+            return {"authenticated": False, "calendar_id": None, "error": _friendly_calendar_error(text)}
+        status = json.loads(text)
+        if status.get("error"):
+            status["error"] = _friendly_calendar_error(status["error"])
+        return status
 
-    async def reminders_between(
-        self,
-        *,
-        user_id: str,
-        time_min: str,
-        time_max: str,
-        limit: int = 200,
-    ) -> dict[str, Any]:
-        text, is_error = await self._call_tool(
-            "list_reminders",
-            {
-                "user_id": user_id,
-                "time_min": time_min,
-                "time_max": time_max,
-                "limit": limit,
-            },
-        )
-        if is_error:
-            raise RuntimeError(text)
-        return json.loads(text)
-
-    async def acknowledge(self, reminder_id: str, user_id: str) -> dict[str, Any]:
-        text, is_error = await self._call_tool(
-            "acknowledge_reminder",
-            {"reminder_id": reminder_id, "user_id": user_id},
-        )
+    async def upcoming_events(self, limit: int = 20) -> dict[str, Any]:
+        text, is_error = await self._call_tool("list_calendar_events", {"limit": limit})
         if is_error:
             raise RuntimeError(text)
         return json.loads(text)
 
     @staticmethod
     def _conversation_input(messages: Iterable[Any]) -> list[dict[str, str]]:
-        output: list[dict[str, str]] = []
+        output = []
         for message in messages:
             message_type = getattr(message, "type", "")
             if message_type in {"human", "ai"}:
-                output.append(
-                    {
-                        "role": "user" if message_type == "human" else "assistant",
-                        "content": str(getattr(message, "content", "")),
-                    }
-                )
+                output.append({
+                    "role": "user" if message_type == "human" else "assistant",
+                    "content": str(getattr(message, "content", "")),
+                })
         return output
 
     async def execute(
         self,
         *,
-        user_id: str,
         user_input: str,
         system_prompt: str,
         messages: Iterable[Any] = (),
     ) -> ToolExecutionResult:
         await self.start()
         assert self._session is not None
+        status = await self.connection_status()
+        if not status.get("authenticated"):
+            return ToolExecutionResult(
+                text=f"Google Calendar is not ready: {status.get('error') or 'OAuth setup is required.'}",
+                events=[],
+            )
         async with self._call_lock:
             listed = await self._session.list_tools()
         tools = [
-            {
-                "type": "function",
-                "name": tool.name,
-                "description": tool.description,
-                "parameters": tool.inputSchema,
-            }
+            {"type": "function", "name": tool.name, "description": tool.description, "parameters": tool.inputSchema}
             for tool in listed.tools
         ]
-
         now = datetime.now(self.timezone)
         date_context = (
             f"Current datetime: {now.isoformat(timespec='seconds')}\n"
             f"Timezone: {self.timezone.key}\n"
-            "Resolve relative times such as 'after 30 minutes' from this exact datetime. "
-            "Pass reminder_time as an ISO-8601 datetime with timezone offset."
+            "Resolve relative meeting times from this exact datetime. Pass start_time as ISO-8601 "
+            "with an offset and timezone as an IANA timezone name."
         )
         conversation = self._conversation_input(messages)
         if not conversation or conversation[-1].get("content") != user_input:
             conversation.append({"role": "user", "content": user_input})
-
         response = await self._openai.responses.create(
             model=self.model,
-            input=[
-                {"role": "system", "content": date_context + "\n\n" + system_prompt},
-                *conversation,
-            ],
+            input=[{"role": "system", "content": date_context + "\n\n" + system_prompt}, *conversation],
             tools=tools,
         )
         events: list[dict[str, Any]] = []
-
         for _ in range(8):
-            tool_calls = [item for item in response.output if item.type == "function_call"]
-            if not tool_calls:
+            calls = [item for item in response.output if item.type == "function_call"]
+            if not calls:
                 return ToolExecutionResult(
-                    text=response.output_text or "The reminder request did not produce a response.",
+                    text=response.output_text or "The Calendar request did not produce a response.",
                     events=events,
                 )
-
-            outputs: list[dict[str, str]] = []
-            for tool_call in tool_calls:
-                arguments = json.loads(tool_call.arguments or "{}")
-                if tool_call.name in {
-                    "create_reminder",
-                    "list_due_reminders",
-                    "acknowledge_reminder",
-                }:
-                    arguments["user_id"] = user_id
-                result, is_error = await self._call_tool(tool_call.name, arguments)
-                events.append(
-                    build_tool_event(
-                        integration="reminders",
-                        tool_name=tool_call.name,
-                        arguments=arguments,
-                        output=result,
-                        is_error=is_error,
+            outputs = []
+            for call in calls:
+                arguments = json.loads(call.arguments or "{}")
+                result, is_error = await self._call_tool(call.name, arguments)
+                events.append(build_tool_event(
+                    integration="calendar",
+                    tool_name=call.name,
+                    arguments=arguments,
+                    output=result,
+                    is_error=is_error,
+                ))
+                if is_error:
+                    return ToolExecutionResult(
+                        text=f"Google Calendar could not complete the request: {_friendly_calendar_error(result)}",
+                        events=events,
                     )
-                )
-                outputs.append(
-                    {
-                        "type": "function_call_output",
-                        "call_id": tool_call.call_id,
-                        "output": result,
-                    }
-                )
+                outputs.append({"type": "function_call_output", "call_id": call.call_id, "output": result})
             response = await self._openai.responses.create(
                 model=self.model,
                 previous_response_id=response.id,
                 input=outputs,
                 tools=tools,
             )
-
         return ToolExecutionResult(
-            text="I could not complete the reminder request after several tool steps.",
+            text="I could not complete the Calendar request after several tool steps.",
             events=events,
         )
 
 
-reminder_client = ReminderMCPClient()
+calendar_client = CalendarMCPClient()

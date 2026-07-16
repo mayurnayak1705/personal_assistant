@@ -1,11 +1,18 @@
 """Planner agent for action-oriented requests."""
 
+import asyncio
+import re
+from datetime import time
+
 from graph_state import GraphState
 from mcp_servers.whatsappmeow.client import whatsapp_client
 from mcp_servers.reminder.client import reminder_client
 from mcp_servers.tasks.client import tasks_client
 from mcp_servers.gmail.client import gmail_client
-from working_context import ToolExecutionResult, context_instructions
+from mcp_servers.calendar.client import calendar_client
+from daily_briefing import generate_daily_briefing
+from daily_briefing_store import set_daily_briefing_preference
+from working_context import ToolExecutionResult, build_tool_event, context_instructions
 
 
 WHATSAPP_SYSTEM_PROMPT = """
@@ -94,6 +101,45 @@ Rules:
 """
 
 
+CALENDAR_SYSTEM_PROMPT = """
+# Google Calendar Planner Agent
+
+You create and manage Google Calendar meetings exclusively through Calendar MCP tools.
+
+Rules:
+- An explicit request to schedule, book, or create a meeting is authorization to create it immediately.
+- A created meeting must include a fresh Google Meet link and send Calendar invitations to all attendees.
+- Resolve relative dates and times using the current datetime supplied by the client.
+- Never invent an attendee email address. Use exact addresses from the request or recent compatible context.
+- If the date, time, or attendee email is genuinely missing or ambiguous, ask one concise clarification question.
+- If duration is omitted, use 30 minutes. Convert the subject into a short title and preserve useful context in the description.
+- Use list_calendar_events to identify an event before cancellation. If several events match, ask the user to choose.
+- Never claim a meeting was created or cancelled unless the MCP result confirms it.
+- In the final response include the title, date/time, attendee list, and Google Meet URL returned by the tool.
+"""
+
+
+def _parse_briefing_time(value: str) -> time | None:
+    """Parse concise 12-hour or 24-hour briefing times."""
+    text = value.strip().lower().replace(".", "")
+    match = re.search(r"\b(1[0-2]|0?[1-9])(?::([0-5]\d))?\s*(am|pm)\b", text)
+    if match:
+        hour = int(match.group(1)) % 12
+        if match.group(3) == "pm":
+            hour += 12
+        return time(hour=hour, minute=int(match.group(2) or 0))
+    match = re.search(r"\b([01]?\d|2[0-3]):([0-5]\d)\b", text)
+    if match:
+        return time(hour=int(match.group(1)), minute=int(match.group(2)))
+    return None
+
+
+def _format_briefing_time(value: time) -> str:
+    hour = value.hour % 12 or 12
+    suffix = "AM" if value.hour < 12 else "PM"
+    return f"{hour}:{value.minute:02d} {suffix}"
+
+
 async def planner_node(state: GraphState):
     print("========== PLANNER NODE ==========")
 
@@ -147,6 +193,64 @@ async def planner_node(state: GraphState):
             result = f"Gmail is currently unavailable: {exc}"
         tool_name = "gmail_mcp"
         description = "Read, draft, send, reply to, or schedule Gmail messages"
+    elif intent == "calendar_management":
+        try:
+            result = await calendar_client.execute(
+                user_input=state["user_input"],
+                system_prompt=CALENDAR_SYSTEM_PROMPT + recent_context,
+                messages=state.get("messages", []),
+            )
+        except Exception as exc:
+            result = f"Google Calendar is currently unavailable: {exc}"
+        tool_name = "calendar_mcp"
+        description = "Create, list, or cancel Google Calendar meetings with Google Meet"
+    elif intent == "daily_briefing":
+        try:
+            briefing = await generate_daily_briefing(
+                user_id=state.get("user_id", "mayur"),
+                force=True,
+            )
+            result = ToolExecutionResult(
+                text=briefing["text"],
+                events=[build_tool_event(
+                    integration="briefing",
+                    tool_name="generate_daily_briefing",
+                    arguments={"user_id": state.get("user_id", "mayur"), "force": True},
+                    output={"briefing_date": briefing["briefing_date"], "summary": briefing["text"]},
+                )],
+            )
+        except Exception as exc:
+            result = f"Daily briefing is currently unavailable: {exc}"
+        tool_name = "daily_briefing"
+        description = "Aggregate today's tasks, reminders, WhatsApp items, and budget state"
+    elif intent == "daily_briefing_schedule":
+        briefing_time = _parse_briefing_time(state.get("user_input", ""))
+        if briefing_time is None:
+            result = "What time in the morning would you like the daily briefing to be triggered?"
+        elif briefing_time.hour >= 12:
+            result = "Daily briefings are morning-only. What morning time would you like?"
+        else:
+            user_id = state.get("user_id", "mayur")
+            try:
+                saved = await asyncio.to_thread(
+                    set_daily_briefing_preference,
+                    user_id=user_id,
+                    briefing_time=briefing_time,
+                )
+                display_time = _format_briefing_time(saved["briefing_time"])
+                result = ToolExecutionResult(
+                    text=f"Your daily briefing is scheduled for {display_time} every morning.",
+                    events=[build_tool_event(
+                        integration="briefing",
+                        tool_name="schedule_daily_briefing",
+                        arguments={"user_id": user_id, "time": briefing_time.strftime("%H:%M")},
+                        output={"enabled": True, "scheduled_time": briefing_time.strftime("%H:%M")},
+                    )],
+                )
+            except Exception as exc:
+                result = f"Daily briefing scheduling is currently unavailable: {exc}"
+        tool_name = "schedule_daily_briefing"
+        description = "Save the automatic morning daily briefing time"
     else:
         result = "This planner does not yet support that action."
         tool_name = "unsupported"

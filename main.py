@@ -11,7 +11,9 @@ from mcp_servers.whatsappmeow.client import whatsapp_client
 from mcp_servers.reminder.client import reminder_client
 from mcp_servers.tasks.client import tasks_client
 from mcp_servers.gmail.client import gmail_client
+from mcp_servers.calendar.client import calendar_client
 from action_history_store import init_action_history_schema
+from daily_briefing_store import init_daily_briefing_schema
 from working_context_store import init_working_context_schema
 
 logger = logging.getLogger(__name__)
@@ -26,8 +28,10 @@ async def lifespan(app: FastAPI):
         "Reminder": reminder_client.start(),
         "Tasks": tasks_client.start(),
         "Gmail": gmail_client.start(),
+        "Calendar": calendar_client.start(),
         "Working context": asyncio.to_thread(init_working_context_schema),
         "Action history": asyncio.to_thread(init_action_history_schema),
+        "Daily briefing": asyncio.to_thread(init_daily_briefing_schema),
     }
     results = await asyncio.gather(*services.values(), return_exceptions=True)
     for service_name, result in zip(services, results):
@@ -39,6 +43,7 @@ async def lifespan(app: FastAPI):
         reminder_client.stop(),
         tasks_client.stop(),
         gmail_client.stop(),
+        calendar_client.stop(),
         return_exceptions=True,
     )
 

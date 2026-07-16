@@ -2,6 +2,7 @@ const sendBtn = document.getElementById("sendBtn");
 const input = document.getElementById("messageInput");
 const messages = document.getElementById("messages");
 const welcome = document.getElementById("welcomeScreen");
+const welcomeGreeting = document.getElementById("welcomeGreeting");
 const typing = document.getElementById("typingIndicator");
 const chatWindow = document.getElementById("chatWindow");
 const attachBtn = document.getElementById("attachBtn");
@@ -26,6 +27,15 @@ const gmailUnreadCount = document.getElementById("gmailUnreadCount");
 const gmailScheduledList = document.getElementById("gmailScheduledList");
 const gmailScheduledEmpty = document.getElementById("gmailScheduledEmpty");
 const gmailScheduledCount = document.getElementById("gmailScheduledCount");
+const gmailReader = document.getElementById("gmailReader");
+const gmailReaderSubject = document.getElementById("gmailReaderSubject");
+const gmailReaderAvatar = document.getElementById("gmailReaderAvatar");
+const gmailReaderFrom = document.getElementById("gmailReaderFrom");
+const gmailReaderTo = document.getElementById("gmailReaderTo");
+const gmailReaderDate = document.getElementById("gmailReaderDate");
+const gmailReaderBody = document.getElementById("gmailReaderBody");
+const gmailReaderClose = document.getElementById("gmailReaderClose");
+const gmailReaderReply = document.getElementById("gmailReaderReply");
 const tasksBtn = document.getElementById("tasksBtn");
 const tasksBadge = document.getElementById("tasksBadge");
 const tasksPanel = document.getElementById("tasksPanel");
@@ -38,6 +48,8 @@ const settingsBtn = document.getElementById("settingsBtn");
 const settingsPanel = document.getElementById("settingsPanel");
 const whatsappToggle = document.getElementById("whatsappToggle");
 const whatsappToggleDescription = document.getElementById("whatsappToggleDescription");
+const themeToggle = document.getElementById("themeToggle");
+const themeToggleDescription = document.getElementById("themeToggleDescription");
 const reminderPopup = document.getElementById("reminderPopup");
 const reminderTitle = document.getElementById("reminderTitle");
 const reminderDescription = document.getElementById("reminderDescription");
@@ -58,9 +70,35 @@ const cancelReplyBtn = document.getElementById("cancelReplyBtn");
 const CONVERSATION_ID_KEY = "assistant_conversation_id";
 const WHATSAPP_CURSOR_KEY = "whatsapp_message_cursor";
 const USER_ID = "mayur";
+const THEME_KEY = "assistant_theme";
 let whatsappEnabled = false;
 let whatsappStateLoaded = false;
 let whatsappToggleBusy = false;
+
+function applyTheme(theme, persist = true){
+    const selected = theme === "light" ? "light" : "dark";
+    document.documentElement.dataset.theme = selected;
+    document.documentElement.style.colorScheme = selected;
+    if(persist){
+        try{
+            localStorage.setItem(THEME_KEY, selected);
+        }catch(_err){
+            // The visual switch still works when browser storage is disabled.
+        }
+    }
+    const light = selected === "light";
+    themeToggle.setAttribute("aria-checked", String(light));
+    themeToggle.setAttribute("aria-label", light ? "Disable light mode" : "Enable light mode");
+    themeToggleDescription.textContent = light
+        ? "Light appearance is active."
+        : "Dark appearance is active.";
+}
+
+applyTheme(document.documentElement.dataset.theme || "dark", false);
+themeToggle.addEventListener("click", () => {
+    const next = document.documentElement.dataset.theme === "light" ? "dark" : "light";
+    applyTheme(next);
+});
 
 // sessionStorage is scoped to this tab and clears when the tab closes -
 // which lines up well with "the chat session is over".
@@ -75,6 +113,38 @@ function getConversationId(){
 
 let conversationId = getConversationId();
 let replyTarget = null;
+let userProfile = null;
+
+async function loadUserProfile(){
+    try{
+        const response = await fetch(
+            `/api/user/profile?user_id=${encodeURIComponent(USER_ID)}`
+        );
+        if(!response.ok) throw new Error("profile unavailable");
+        userProfile = await response.json();
+        const name = userProfile.first_name || userProfile.display_name;
+        welcomeGreeting.textContent = name
+            ? `${userProfile.greeting}, ${name}`
+            : userProfile.greeting;
+        return userProfile;
+    }catch(_err){
+        welcomeGreeting.textContent = "Welcome";
+        return null;
+    }
+}
+
+async function initializeWelcome(){
+    const profile = await loadUserProfile();
+    if(profile?.time_period === "morning"){
+        await loadDailyBriefing();
+    }
+}
+
+// Recheck while the app remains open so a scheduled briefing appears without
+// requiring a refresh. The server enforces the time and once-per-day delivery.
+setInterval(() => {
+    loadDailyBriefing();
+}, 60 * 1000);
 
 /* ---------- Floating notification card ---------- */
 
@@ -298,6 +368,55 @@ function addMessage(text, type){
     hljs.highlightAll();
 
     chatWindow.scrollTop = chatWindow.scrollHeight;
+}
+
+function addDailyBriefing(briefing){
+    welcome.style.display = "none";
+    chatWindow.classList.add("active");
+
+    const wrapper = document.createElement("div");
+    wrapper.className = "message assistant daily-briefing-message";
+    const bubble = document.createElement("div");
+    bubble.className = "bubble daily-briefing-bubble";
+    const eyebrow = document.createElement("span");
+    eyebrow.className = "daily-briefing-eyebrow";
+    eyebrow.textContent = "Daily briefing";
+    const text = document.createElement("p");
+    text.textContent = briefing.text;
+    bubble.append(eyebrow, text);
+
+    const facts = document.createElement("div");
+    facts.className = "daily-briefing-facts";
+    const factValues = [
+        ["Due today", briefing.tasks?.due_today_count || 0],
+        ["Overdue", briefing.tasks?.overdue_count || 0],
+        ["Reminders", (briefing.reminders?.due_count || 0) + (briefing.reminders?.later_today_count || 0)],
+        ["WhatsApp", briefing.whatsapp?.count || 0]
+    ];
+    factValues.forEach(([label, value]) => {
+        const fact = document.createElement("span");
+        fact.textContent = `${label}: ${value}`;
+        facts.appendChild(fact);
+    });
+    bubble.appendChild(facts);
+    wrapper.appendChild(bubble);
+    messages.appendChild(wrapper);
+    chatWindow.scrollTop = chatWindow.scrollHeight;
+}
+
+async function loadDailyBriefing(){
+    try{
+        const response = await fetch(
+            `/api/briefing/daily?user_id=${encodeURIComponent(USER_ID)}`
+        );
+        if(!response.ok) return;
+        const briefing = await response.json();
+        if(briefing.should_show && briefing.text){
+            addDailyBriefing(briefing);
+        }
+    }catch(_err){
+        // Each integration remains available even if briefing aggregation fails.
+    }
 }
 
 function addFollowUpSuggestion(suggestion){
@@ -667,6 +786,7 @@ document.addEventListener("visibilitychange", () => {
 /* ---------- Gmail ---------- */
 
 let gmailLoading = false;
+let activeGmailMessage = null;
 
 function gmailTime(value){
     const date = new Date(value);
@@ -680,6 +800,112 @@ function useGmailPrompt(prompt){
     gmailPanel.classList.add("hidden");
     gmailBtn.setAttribute("aria-expanded", "false");
 }
+
+function closeGmailReader(){
+    gmailReader.classList.add("hidden");
+    activeGmailMessage = null;
+}
+
+function setGmailReaderMetadata(email){
+    gmailReaderSubject.textContent = email.subject || "(no subject)";
+    gmailReaderFrom.textContent = email.from || "Unknown sender";
+    gmailReaderTo.textContent = email.to ? `To: ${email.to}` : "";
+    gmailReaderDate.textContent = gmailTime(email.date);
+    const initial = String(email.from || "").trim().match(/[A-Za-z0-9]/)?.[0];
+    gmailReaderAvatar.textContent = initial?.toUpperCase() || "✉";
+}
+
+function appendSafeEmailText(container, value){
+    const urlPattern = /https?:\/\/[^\s]+/g;
+    let cursor = 0;
+    for(const match of value.matchAll(urlPattern)){
+        container.appendChild(document.createTextNode(value.slice(cursor, match.index)));
+        let url = match[0];
+        let trailing = "";
+        while(/[.,;!?]$/.test(url)){
+            trailing = url.slice(-1) + trailing;
+            url = url.slice(0, -1);
+        }
+        const link = document.createElement("a");
+        link.href = url;
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        link.title = url;
+        try{
+            link.textContent = `Open ${new URL(url).hostname}`;
+        }catch(_err){
+            link.textContent = "Open link";
+        }
+        container.append(link, document.createTextNode(trailing));
+        cursor = (match.index || 0) + match[0].length;
+    }
+    container.appendChild(document.createTextNode(value.slice(cursor)));
+}
+
+function renderGmailBody(value){
+    gmailReaderBody.replaceChildren();
+    const cleaned = String(value || "")
+        .replace(/\r/g, "")
+        .replace(/^\s*\[image:[^\]]*\]\s*$/gim, "")
+        .replace(/<(https?:\/\/[^>]+)>/g, "$1")
+        .trim();
+    if(!cleaned){
+        gmailReaderBody.textContent = "This email has no readable text body.";
+        return;
+    }
+    const blocks = cleaned
+        .split(/\n\s*\n+/)
+        .map(block => block.split("\n").map(line => line.trim()).filter(Boolean).join(" "))
+        .filter(Boolean);
+    for(const block of blocks){
+        const paragraph = document.createElement("p");
+        appendSafeEmailText(paragraph, block);
+        gmailReaderBody.appendChild(paragraph);
+    }
+}
+
+async function openGmailMessage(summary){
+    activeGmailMessage = summary;
+    setGmailReaderMetadata(summary);
+    gmailReaderBody.textContent = "Loading message…";
+    gmailReaderReply.disabled = true;
+    gmailReader.classList.remove("hidden");
+    gmailPanel.classList.add("hidden");
+    gmailBtn.setAttribute("aria-expanded", "false");
+    gmailReaderClose.focus();
+
+    try{
+        const query = new URLSearchParams({
+            user_id:USER_ID,
+            conversation_id:conversationId
+        });
+        const response = await fetch(
+            `/api/gmail/messages/${encodeURIComponent(summary.id)}?${query.toString()}`
+        );
+        if(!response.ok) throw new Error("message unavailable");
+        const result = await response.json();
+        const email = result.email || summary;
+        activeGmailMessage = email;
+        setGmailReaderMetadata(email);
+        renderGmailBody(email.body || email.snippet);
+        gmailReaderReply.disabled = false;
+    }catch(_err){
+        gmailReaderBody.textContent = "This email could not be loaded. Please try again.";
+    }
+}
+
+gmailReaderClose.addEventListener("click", closeGmailReader);
+gmailReader.addEventListener("pointerdown", event => {
+    if(event.target === gmailReader) closeGmailReader();
+});
+gmailReaderReply.addEventListener("click", () => {
+    if(!activeGmailMessage) return;
+    const email = activeGmailMessage;
+    closeGmailReader();
+    useGmailPrompt(
+        `Reply to Gmail message ${email.id} from ${email.from} about "${email.subject}": `
+    );
+});
 
 async function runGmailAction(path, button){
     const original = button.textContent;
@@ -711,6 +937,18 @@ function renderUnreadEmails(emails){
     for(const email of emails){
         const item = document.createElement("article");
         item.className = "gmail-item";
+        item.setAttribute("role", "button");
+        item.tabIndex = 0;
+        item.setAttribute("aria-label", `Open email: ${email.subject || "No subject"}`);
+        item.addEventListener("click", event => {
+            if(event.target.closest("button")) return;
+            openGmailMessage(email);
+        });
+        item.addEventListener("keydown", event => {
+            if(event.target !== item || !["Enter", " "].includes(event.key)) return;
+            event.preventDefault();
+            openGmailMessage(email);
+        });
         const head = document.createElement("div");
         head.className = "gmail-item-head";
         const subject = document.createElement("h4");
@@ -1298,8 +1536,28 @@ settingsBtn.addEventListener("click", () => {
     gmailBtn.setAttribute("aria-expanded", "false");
 });
 
+// Any icon-controlled aside behaves like a dismissible popover. Keeping this
+// relationship driven by aria-controls also covers future panels (for example
+// Notes) without adding another document-level handler.
+const floatingPanelBindings = Array.from(document.querySelectorAll("[aria-controls]"))
+    .map(trigger => ({
+        trigger,
+        panel: document.getElementById(trigger.getAttribute("aria-controls"))
+    }))
+    .filter(binding => binding.panel?.matches("aside"));
+
+document.addEventListener("pointerdown", event => {
+    for(const {trigger, panel} of floatingPanelBindings){
+        if(panel.classList.contains("hidden")) continue;
+        if(panel.contains(event.target) || trigger.contains(event.target)) continue;
+        panel.classList.add("hidden");
+        trigger.setAttribute("aria-expanded", "false");
+    }
+});
+
 document.addEventListener("keydown", event => {
     if(event.key !== "Escape") return;
+    closeGmailReader();
     settingsPanel.classList.add("hidden");
     notificationPanel.classList.add("hidden");
     tasksPanel.classList.add("hidden");
@@ -1314,6 +1572,8 @@ renderNotificationPanel();
 renderTaskNotifications();
 renderTaskOverview();
 
+initializeWelcome();
+setInterval(loadUserProfile, 5 * 60 * 1000);
 pollReminders();
 setInterval(pollReminders, 5000);
 pollTasks();

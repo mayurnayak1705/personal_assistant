@@ -95,6 +95,15 @@ def _after_email_schedule(_event: dict[str, Any]) -> Suggestion:
     )
 
 
+@register("calendar", "create_calendar_meeting")
+def _after_meeting_create(_event: dict[str, Any]) -> Suggestion:
+    return _suggestion(
+        "Show upcoming meetings",
+        "Show my upcoming Google Calendar meetings",
+        "Review what is next on the calendar.",
+    )
+
+
 def suggestion_for_event(event: dict[str, Any]) -> Suggestion | None:
     if not event.get("success"):
         return None

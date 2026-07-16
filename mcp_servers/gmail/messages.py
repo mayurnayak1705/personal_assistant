@@ -6,6 +6,7 @@ import base64
 import os
 from email.message import EmailMessage
 from email.utils import getaddresses, parseaddr
+from html.parser import HTMLParser
 from typing import Any
 
 
@@ -30,10 +31,38 @@ def _decode(data: str | None) -> str:
     return base64.urlsafe_b64decode(data.encode("ascii") + b"=" * (-len(data) % 4)).decode("utf-8", errors="replace")
 
 
+class _HTMLTextExtractor(HTMLParser):
+    BLOCK_TAGS = {"br", "p", "div", "li", "tr", "h1", "h2", "h3", "h4", "h5", "h6"}
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.parts: list[str] = []
+
+    def handle_starttag(self, tag: str, _attrs) -> None:
+        if tag.casefold() in self.BLOCK_TAGS:
+            self.parts.append("\n")
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag.casefold() in self.BLOCK_TAGS:
+            self.parts.append("\n")
+
+    def handle_data(self, data: str) -> None:
+        self.parts.append(data)
+
+
+def _html_to_text(value: str) -> str:
+    parser = _HTMLTextExtractor()
+    parser.feed(value)
+    lines = [" ".join(line.split()) for line in "".join(parser.parts).splitlines()]
+    return "\n".join(line for line in lines if line).strip()
+
+
 def _body(payload: dict[str, Any]) -> str:
     mime_type = payload.get("mimeType", "")
     if mime_type == "text/plain":
         return _decode((payload.get("body") or {}).get("data"))
+    if mime_type == "text/html":
+        return _html_to_text(_decode((payload.get("body") or {}).get("data")))
     plain = ""
     html = ""
     for part in payload.get("parts") or []:

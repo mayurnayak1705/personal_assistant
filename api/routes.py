@@ -2,6 +2,8 @@ import asyncio
 import uuid
 import traceback
 import logging
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, HTTPException
 from langchain_core.messages import HumanMessage, AIMessage
@@ -20,18 +22,29 @@ from graph import app
 from session_store import add_turn, get_turns, pop_session
 from token_utils import count_tokens
 from Server.postgre_insert import insert_chat_history_batch
-from Server.postgre_search import fetch_conversation_history, fetch_user_facts
+from Server.postgre_search import fetch_conversation_history, fetch_user_facts, fetch_user_profile_name
 from mcp_servers.whatsappmeow.client import whatsapp_client
 from mcp_servers.reminder.client import reminder_client
 from mcp_servers.tasks.client import tasks_client
 from mcp_servers.gmail.client import gmail_client
+from mcp_servers.calendar.client import calendar_client
 from action_history_store import fetch_action_history, save_action_history_events
 from follow_up_suggestions import choose_follow_up
 from working_context import build_tool_event
 from working_context_store import fetch_working_context, save_working_context_events
+from daily_briefing import generate_daily_briefing
+from daily_briefing_store import get_daily_briefing_preference
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+
+def _time_period(hour: int) -> tuple[str, str]:
+    if hour < 12:
+        return "morning", "Good morning"
+    if hour < 17:
+        return "afternoon", "Good afternoon"
+    return "evening", "Good evening"
 
 
 async def _record_action_events(
@@ -213,6 +226,31 @@ async def health():
         "reminders": reminder_client.status,
         "tasks": tasks_client.status,
         "gmail": gmail_client.status,
+        "calendar": calendar_client.status,
+    }
+
+
+@router.get("/user/profile")
+async def user_profile(user_id: str = "mayur"):
+    """Return the database-backed display name and server-authoritative greeting."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    now = datetime.now(ZoneInfo("Asia/Kolkata"))
+    period, greeting = _time_period(now.hour)
+    try:
+        profile = await asyncio.to_thread(fetch_user_profile_name, user_id)
+    except Exception as exc:
+        logger.warning("Could not load user profile name: %s", exc)
+        profile = None
+    return {
+        "user_id": user_id,
+        "display_name": profile.get("display_name") if profile else None,
+        "first_name": profile.get("first_name") if profile else None,
+        "greeting": greeting,
+        "time_period": period,
+        "current_time": now.isoformat(timespec="seconds"),
+        "timezone": "Asia/Kolkata",
     }
 
 
@@ -236,6 +274,36 @@ async def recent_actions(
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
+@router.get("/briefing/daily")
+async def daily_briefing(user_id: str = "mayur", force: bool = False):
+    """Generate once after the user's scheduled time during morning hours."""
+    try:
+        if not force:
+            preference = await asyncio.to_thread(
+                get_daily_briefing_preference,
+                user_id=user_id,
+            )
+            timezone_name = preference.get("timezone") or "Asia/Kolkata"
+            try:
+                now = datetime.now(ZoneInfo(timezone_name))
+            except Exception:
+                now = datetime.now(ZoneInfo("Asia/Kolkata"))
+            scheduled_time = preference["briefing_time"]
+            if not preference.get("enabled", True):
+                return {"should_show": False, "reason": "disabled"}
+            if now.hour >= 12:
+                return {"should_show": False, "reason": "morning_window_closed"}
+            if now.time().replace(tzinfo=None) < scheduled_time:
+                return {
+                    "should_show": False,
+                    "reason": "not_due",
+                    "scheduled_time": scheduled_time.strftime("%H:%M"),
+                }
+        return await generate_daily_briefing(user_id=user_id, force=force)
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
 @router.get("/gmail/status")
 async def gmail_status():
     """Return Gmail OAuth connection status without exposing token data."""
@@ -245,11 +313,53 @@ async def gmail_status():
         return {"authenticated": False, "email": None, "error": str(exc)}
 
 
+@router.get("/calendar/status")
+async def calendar_status():
+    """Return Calendar OAuth connection status without exposing token data."""
+    try:
+        return await calendar_client.connection_status()
+    except Exception as exc:
+        return {"authenticated": False, "calendar_id": None, "error": str(exc)}
+
+
+@router.get("/calendar/events")
+async def calendar_events(limit: int = 20):
+    """Return upcoming Calendar events for UI integrations."""
+    try:
+        return await calendar_client.upcoming_events(limit=max(1, min(limit, 50)))
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
 @router.get("/gmail/unread")
 async def gmail_unread(limit: int = 20):
     """Return unread inbox messages for the Gmail UI panel."""
     try:
         return await gmail_client.unread_emails(limit=max(1, min(limit, 50)))
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@router.get("/gmail/messages/{message_id}")
+async def gmail_message(
+    message_id: str,
+    user_id: str = "mayur",
+    conversation_id: str | None = None,
+):
+    """Return one complete Gmail message for the safe reader modal."""
+    try:
+        result = await gmail_client.read_email(message_id)
+        await _record_action_events(
+            conversation_id=conversation_id or f"ui:{user_id}",
+            user_id=user_id,
+            events=[build_tool_event(
+                integration="gmail",
+                tool_name="read_email",
+                arguments={"message_id": message_id},
+                output=result,
+            )],
+        )
+        return result
     except Exception as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
