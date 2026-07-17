@@ -1,9 +1,10 @@
 import chromadb
+import os
 from openai import OpenAI
 from dotenv import load_dotenv
 load_dotenv()
 client = chromadb.PersistentClient(
-    path="/Users/mithunnayak/Desktop/WORK/personal_assistant/Databases/Chroma"
+    path=os.getenv("CHROMA_PATH", "Databases/Chroma")
 )
 
 collection = client.get_or_create_collection(

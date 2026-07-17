@@ -134,7 +134,7 @@ def build_message(
     if not recipients["to"]:
         raise ValueError("At least one To address is required")
     message = EmailMessage()
-    from_email = os.getenv("GMAIL_FROM_EMAIL", "mayurnayak1705@gmail.com").strip()
+    from_email = os.getenv("GMAIL_FROM_EMAIL", "").strip()
     if from_email:
         message["From"] = from_email
     message["To"] = ", ".join(recipients["to"])

@@ -6,6 +6,7 @@ from mcp import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
 from openai import OpenAI
 from working_context import ToolExecutionResult, build_tool_event
+from debug_log import debug
 
 
 class ExpenseMCPClient:
@@ -68,11 +69,14 @@ Resolve relative dates such as today, this week, this month, and this year befor
                     outputs = []
                     for call in calls:
                         arguments = json.loads(call.arguments)
+                        debug("TOOL", "call", integration="expenses", tool=call.name, parameters=arguments)
                         result = await session.call_tool(call.name, arguments)
                         output = "\n".join(
                             block.text for block in result.content if hasattr(block, "text")
                         ) if result.content else ""
                         parsed_artifact = self._parse_artifact(output)
+                        debug("TOOL", "result", integration="expenses", tool=call.name,
+                              is_error=bool(getattr(result, "isError", False)), output_chars=len(output))
                         if parsed_artifact:
                             artifact = parsed_artifact
                         events.append(

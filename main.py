@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import time
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -15,6 +16,9 @@ from mcp_servers.calendar.client import calendar_client
 from action_history_store import init_action_history_schema
 from daily_briefing_store import init_daily_briefing_schema
 from working_context_store import init_working_context_schema
+from debug_log import debug, install_sqlite_tracing
+
+install_sqlite_tracing()
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +41,9 @@ async def lifespan(app: FastAPI):
     for service_name, result in zip(services, results):
         if isinstance(result, Exception):
             logger.warning("%s MCP did not start: %s", service_name, result)
+            debug("TOOL", "service_start", service=service_name, success=False, error=str(result))
+        else:
+            debug("TOOL", "service_start", service=service_name, success=True)
     yield
     await asyncio.gather(
         whatsapp_client.stop(),
@@ -52,6 +59,22 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
+
+
+@app.middleware("http")
+async def debug_requests(request: Request, call_next):
+    started = time.perf_counter()
+    debug("API", "request", method=request.method, path=request.url.path,
+          query=dict(request.query_params))
+    try:
+        response = await call_next(request)
+    except Exception as exc:
+        debug("API", "response", method=request.method, path=request.url.path,
+              success=False, error=type(exc).__name__, duration_ms=round((time.perf_counter() - started) * 1000, 1))
+        raise
+    debug("API", "response", method=request.method, path=request.url.path,
+          status=response.status_code, duration_ms=round((time.perf_counter() - started) * 1000, 1))
+    return response
 
 # Static Files
 app.mount("/static", StaticFiles(directory="static"), name="static")

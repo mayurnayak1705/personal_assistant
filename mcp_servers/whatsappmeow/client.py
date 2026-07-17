@@ -11,6 +11,7 @@ import asyncio
 import json
 import os
 import re
+import sqlite3
 import time
 from contextlib import AsyncExitStack
 from pathlib import Path
@@ -21,6 +22,7 @@ from mcp import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
 from openai import AsyncOpenAI
 from working_context import ToolExecutionResult, build_tool_event
+from debug_log import debug
 
 load_dotenv()
 
@@ -38,6 +40,14 @@ class WhatsAppMCPClient:
         self._start_error: str | None = None
         self._state_path = self.server_dir / "integration-state.json"
         self._enabled = self._load_enabled_state()
+        self._pair_lock = asyncio.Lock()
+        self._pair_process: asyncio.subprocess.Process | None = None
+        self._pair_task: asyncio.Task[None] | None = None
+        self._pair_state: dict[str, Any] = {
+            "status": "idle",
+            "qr_image": None,
+            "message": None,
+        }
         # Refreshed from list_contacts. The WhatsApp contact store remains the
         # persistent source of truth; this map gives the planner fast, explicit
         # name -> candidate-number visibility for the current process.
@@ -56,12 +66,137 @@ class WhatsAppMCPClient:
         return self._enabled
 
     @property
+    def session_db_path(self) -> Path:
+        return Path(
+            os.getenv(
+                "WHATSMEOW_SESSION_DB",
+                str(self.server_dir / "whatsmeow-session.db"),
+            )
+        ).expanduser()
+
+    @property
+    def paired(self) -> bool:
+        path = self.session_db_path
+        if not path.is_file():
+            return False
+        try:
+            with sqlite3.connect(path) as connection:
+                row = connection.execute(
+                    "SELECT 1 FROM whatsmeow_device WHERE jid IS NOT NULL AND jid != '' LIMIT 1"
+                ).fetchone()
+            return row is not None
+        except sqlite3.Error:
+            return False
+
+    @property
     def status(self) -> dict[str, Any]:
         return {
             "enabled": self.enabled,
             "connected": self.connected,
+            "paired": self.paired,
+            "pairing_status": self._pair_state["status"],
             "error": self._start_error,
         }
+
+    @property
+    def pairing_status(self) -> dict[str, Any]:
+        return {
+            **self.status,
+            **self._pair_state,
+        }
+
+    async def start_pairing(self) -> dict[str, Any]:
+        async with self._pair_lock:
+            if self.paired:
+                self._pair_state = {
+                    "status": "success",
+                    "qr_image": None,
+                    "message": "WhatsApp is already linked.",
+                }
+                if self.enabled and not self.connected:
+                    await self.start()
+                return self.pairing_status
+            if self._pair_process is not None and self._pair_process.returncode is None:
+                return self.pairing_status
+
+            self._enabled = True
+            self._persist_enabled_state()
+            self._start_error = None
+            self._pair_state = {
+                "status": "starting",
+                "qr_image": None,
+                "message": "Requesting a QR code from WhatsApp…",
+            }
+            environment = os.environ.copy()
+            environment["WHATSMEOW_SESSION_DB"] = str(self.session_db_path)
+            self._pair_process = await asyncio.create_subprocess_exec(
+                "go",
+                "run",
+                "pairing.go",
+                cwd=self.server_dir,
+                env=environment,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.STDOUT,
+            )
+            self._pair_task = asyncio.create_task(self._watch_pairing())
+            return self.pairing_status
+
+    async def _watch_pairing(self) -> None:
+        process = self._pair_process
+        if process is None or process.stdout is None:
+            return
+        succeeded = False
+        try:
+            while line := await process.stdout.readline():
+                try:
+                    event = json.loads(line.decode("utf-8"))
+                except (UnicodeDecodeError, json.JSONDecodeError):
+                    continue
+                status = str(event.get("status") or "error")
+                self._pair_state = {
+                    "status": status,
+                    "qr_image": event.get("qr_image"),
+                    "message": event.get("message"),
+                }
+                if status == "success":
+                    succeeded = True
+            await process.wait()
+            if succeeded and self.paired:
+                self._start_error = None
+                try:
+                    await self.start()
+                except Exception as exc:
+                    self._pair_state = {
+                        "status": "error",
+                        "qr_image": None,
+                        "message": f"WhatsApp linked, but the messaging service could not start: {exc}",
+                    }
+            elif self._pair_state["status"] in {"starting", "qr"}:
+                self._pair_state = {
+                    "status": "error",
+                    "qr_image": None,
+                    "message": "WhatsApp pairing stopped before it completed.",
+                }
+        finally:
+            self._pair_process = None
+            self._pair_task = None
+
+    async def cancel_pairing(self) -> dict[str, Any]:
+        async with self._pair_lock:
+            process = self._pair_process
+            if process is not None and process.returncode is None:
+                process.terminate()
+                try:
+                    await asyncio.wait_for(process.wait(), timeout=3)
+                except asyncio.TimeoutError:
+                    process.kill()
+                    await process.wait()
+            self._pair_state = {
+                "status": "idle",
+                "qr_image": None,
+                "message": None,
+            }
+            return self.pairing_status
 
     def _load_enabled_state(self) -> bool:
         try:
@@ -79,13 +214,13 @@ class WhatsAppMCPClient:
         temporary.replace(self._state_path)
 
     async def start_if_enabled(self) -> None:
-        if self.enabled:
+        if self.enabled and self.paired:
             await self.start()
 
     async def set_enabled(self, enabled: bool) -> dict[str, Any]:
         enabled = bool(enabled)
         if enabled == self._enabled:
-            if enabled and not self.connected:
+            if enabled and self.paired and not self.connected:
                 await self.start()
             return self.status
 
@@ -93,7 +228,7 @@ class WhatsAppMCPClient:
         self._persist_enabled_state()
         self.pending_sends.clear()
 
-        if enabled:
+        if enabled and self.paired:
             await self.start()
         else:
             # Wait for any in-flight send/poll to finish before disconnecting.
@@ -106,6 +241,8 @@ class WhatsAppMCPClient:
     async def start(self) -> None:
         if not self.enabled:
             raise RuntimeError("WhatsApp integration is turned off.")
+        if not self.paired:
+            raise RuntimeError("WhatsApp is not linked. Connect it from Settings and scan the QR code.")
         if self._session is not None:
             return
 
@@ -155,6 +292,7 @@ class WhatsAppMCPClient:
             self._start_error = None
 
     async def stop(self) -> None:
+        await self.cancel_pairing()
         async with self._start_lock:
             stack, self._stack = self._stack, None
             self._session = None
@@ -164,6 +302,7 @@ class WhatsAppMCPClient:
     async def _call_tool(self, name: str, arguments: dict[str, Any]) -> tuple[str, bool]:
         if not self.enabled:
             raise RuntimeError("WhatsApp integration is turned off. Turn it on before sending or receiving messages.")
+        debug("TOOL", "call", integration="whatsapp", tool=name, parameters=arguments)
         await self.start()
         assert self._session is not None
         async with self._call_lock:
@@ -173,7 +312,9 @@ class WhatsAppMCPClient:
             for item in result.content
             if getattr(item, "type", None) == "text"
         )
-        return text, bool(getattr(result, "isError", False))
+        is_error = bool(getattr(result, "isError", False))
+        debug("TOOL", "result", integration="whatsapp", tool=name, is_error=is_error, output_chars=len(text))
+        return text, is_error
 
     async def list_contacts(self, query: str = "") -> dict[str, Any]:
         text, is_error = await self._call_tool("list_contacts", {"query": query})

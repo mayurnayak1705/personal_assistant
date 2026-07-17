@@ -48,3 +48,15 @@ class WhatsAppToggleRequest(BaseModel):
 class GmailActionRequest(BaseModel):
     user_id: str = "mayur"
     conversation_id: Optional[str] = None
+
+
+class ExpenseImportActionRequest(BaseModel):
+    action: str
+    category: Optional[str] = None
+    user_id: str = "mayur"
+    conversation_id: Optional[str] = None
+
+
+class GoogleOAuthConfigRequest(BaseModel):
+    user_id: str = "mayur"
+    client_config: dict[str, Any]

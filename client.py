@@ -9,6 +9,7 @@ from mcp.client.stdio import (
 )
 
 from datetime import datetime
+from debug_log import debug
 class MCPClient:
     """
     Generic MCP Client.
@@ -38,6 +39,7 @@ class MCPClient:
         Execute an LLM request using tools exposed
         by an MCP server.
         """
+        debug("TOOL", "client_start", integration=self.server_module, model=self.model)
         today = datetime.now()
 
         date_context = f"""
@@ -170,10 +172,12 @@ class MCPClient:
                     tool_outputs = []
 
                     for tool_call in tool_calls:
-                        print(tool_call)
                         arguments = json.loads(
                             tool_call.arguments
                         )
+
+                        debug("TOOL", "call", integration=self.server_module,
+                              tool=tool_call.name, parameters=arguments)
 
                         result = await session.call_tool(
                             tool_call.name,
@@ -186,8 +190,10 @@ class MCPClient:
                         else:
                             output = ""
 
-                        if getattr(result, "isError", False):
-                            print(f"[TOOL ERROR] {tool_call.name}: {output}")
+                        debug("TOOL", "result", integration=self.server_module,
+                              tool=tool_call.name,
+                              is_error=bool(getattr(result, "isError", False)),
+                              output_chars=len(output))
                         tool_outputs.append(
                             {
                                 "type": "function_call_output",
@@ -202,8 +208,3 @@ class MCPClient:
                         input=tool_outputs,
                         tools=openai_tools,   # <-- add this
                     )
-                    print("\n===== FIRST RESPONSE =====")
-                    for item in response.output:
-                        print("TYPE:", item.type)
-                        print(item)
-                    print("==========================\n")

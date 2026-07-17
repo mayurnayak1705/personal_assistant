@@ -1,21 +1,17 @@
 # Gmail MCP integration
 
 The Gmail MCP supports inbox search/read, unread mail, drafts, immediate sends,
-threaded replies, mark-read, archive, and durable scheduled delivery. The
-configured From identity is `mayurnayak1705@gmail.com`; Gmail will only accept
-that address when it is the authenticated account or a verified send-as alias.
+threaded replies, mark-read, archive, and durable scheduled delivery. By
+default Gmail uses the authenticated account as the From identity. An optional
+`GMAIL_FROM_EMAIL` value must belong to that account or be a verified send-as
+alias.
 
 ## OAuth
 
-The integration uses Google's installed-app OAuth flow and the single
-`gmail.modify` scope. The generated `mcp_servers/gmail/token.json` contains the
-refresh token, is mode `0600`, and is ignored by Git.
-
-To reconnect:
-
-```bash
-.venv/bin/python -m mcp_servers.gmail.setup_oauth /path/to/client_secret.json
-```
+Gmail and Calendar use the shared Settings-based OAuth flow documented in
+[`google-oauth.md`](google-oauth.md). Users provide their own Google Desktop
+OAuth JSON. Tokens are stored in the OS keyring when available, with a
+permission-restricted local fallback.
 
 ## Scheduled delivery
 

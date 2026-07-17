@@ -189,7 +189,7 @@
         <div class="notification-panel-head">
             <div>
                 <span class="notification-eyebrow">Notifications</span>
-                <h2 id="notificationPanelTitle">Reminders &amp; tasks</h2>
+                <h2 id="notificationPanelTitle">Notifications</h2>
             </div>
             <span class="notification-count" id="notificationCount">0</span>
         </div>
@@ -208,6 +208,14 @@
             </div>
             <div class="notification-list" id="taskNotificationList"></div>
             <p class="notification-empty" id="taskNotificationEmpty">No due tasks.</p>
+        </section>
+        <section class="notification-section" aria-labelledby="expenseImportSectionTitle">
+            <div class="notification-section-head">
+                <h3 id="expenseImportSectionTitle">Imported expenses</h3>
+                <span id="expenseImportNotificationCount">0</span>
+            </div>
+            <div class="notification-list" id="expenseImportNotificationList"></div>
+            <p class="notification-empty" id="expenseImportNotificationEmpty">No expenses awaiting review.</p>
         </section>
     </aside>
 
@@ -235,14 +243,17 @@
             <div class="integration-setting-copy">
                 <div class="integration-setting-title">
                     <strong>WhatsApp</strong>
-                    <span class="integration-status integration-status-live">Available</span>
+                    <span class="integration-status" id="whatsappIntegrationStatus">Checking…</span>
                 </div>
                 <p id="whatsappToggleDescription">Loading integration status…</p>
             </div>
-            <button class="integration-switch" id="whatsappToggle" type="button"
-                    role="switch" aria-checked="false" aria-label="Enable WhatsApp" disabled>
-                <span></span>
-            </button>
+            <div class="integration-card-actions">
+                <button class="integration-connect-btn hidden" id="whatsappConnectBtn" type="button">Connect</button>
+                <button class="integration-switch" id="whatsappToggle" type="button"
+                        role="switch" aria-checked="false" aria-label="Enable WhatsApp" disabled>
+                    <span></span>
+                </button>
+            </div>
         </section>
         <section class="integration-setting integration-card">
             <div class="integration-icon integration-icon-gmail" aria-hidden="true">
@@ -254,11 +265,11 @@
             <div class="integration-setting-copy">
                 <div class="integration-setting-title">
                     <strong>Gmail</strong>
-                    <span class="integration-status">Coming soon</span>
+                    <span class="integration-status" id="gmailIntegrationStatus">Not connected</span>
                 </div>
-                <p>Send, schedule and read your email.</p>
+                <p id="gmailIntegrationDescription">Connect Google to send, schedule and read email.</p>
             </div>
-            <button class="integration-connect-btn" type="button" disabled aria-label="Gmail connection coming soon">Connect</button>
+            <button class="integration-connect-btn google-connect-btn" id="googleConnectBtn" type="button">Connect</button>
         </section>
         <section class="integration-setting integration-card">
             <div class="integration-icon integration-icon-calendar" aria-hidden="true">
@@ -271,12 +282,13 @@
             <div class="integration-setting-copy">
                 <div class="integration-setting-title">
                     <strong>Google Calendar</strong>
-                    <span class="integration-status">Coming soon</span>
+                    <span class="integration-status" id="calendarIntegrationStatus">Not connected</span>
                 </div>
-                <p>Schedule meetings and manage events.</p>
+                <p id="calendarIntegrationDescription">The same Google connection manages meetings and events.</p>
             </div>
-            <button class="integration-connect-btn" type="button" disabled aria-label="Google Calendar connection coming soon">Connect</button>
+            <button class="integration-connect-btn google-connect-btn" id="calendarGoogleConnectBtn" type="button">Connect</button>
         </section>
+        <input id="googleOauthFileInput" type="file" accept="application/json,.json" hidden>
         <section class="integration-setting appearance-setting">
             <div class="integration-setting-copy">
                 <div class="integration-setting-title">
@@ -291,6 +303,33 @@
             </button>
         </section>
     </aside>
+
+    <section class="whatsapp-pairing-overlay hidden" id="whatsappPairingModal" role="dialog"
+             aria-modal="true" aria-labelledby="whatsappPairingTitle">
+        <article class="whatsapp-pairing-card">
+            <header class="whatsapp-pairing-head">
+                <div>
+                    <span class="settings-eyebrow">WhatsApp integration</span>
+                    <h2 id="whatsappPairingTitle">Link WhatsApp</h2>
+                </div>
+                <button id="whatsappPairingClose" type="button" aria-label="Close WhatsApp pairing">×</button>
+            </header>
+            <div class="whatsapp-qr-shell" id="whatsappQrShell">
+                <div class="whatsapp-qr-loader" id="whatsappQrLoader" aria-hidden="true"></div>
+                <img class="hidden" id="whatsappQrImage" alt="WhatsApp linking QR code">
+            </div>
+            <p class="whatsapp-pairing-message" id="whatsappPairingMessage">Requesting a QR code…</p>
+            <ol class="whatsapp-pairing-steps">
+                <li>Open WhatsApp on your phone.</li>
+                <li>Go to <strong>Settings → Linked devices</strong>.</li>
+                <li>Select <strong>Link a device</strong> and scan this code.</li>
+            </ol>
+            <div class="whatsapp-pairing-actions">
+                <button class="hidden" id="whatsappPairingRetry" type="button">Generate new QR</button>
+                <button id="whatsappPairingCancel" type="button">Cancel</button>
+            </div>
+        </article>
+    </section>
 
     <!-- Floating notification card -->
     <div class="notice hidden" id="notice" role="status" aria-live="polite">
@@ -384,7 +423,7 @@
 
             </div>
 
-            <p class="prompt-hint">Aura can make mistakes. Verify important information.</p>
+            <p class="prompt-hint">Deep Thought can make mistakes. Verify important information.</p>
 
         </section>
 

@@ -3,6 +3,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 from graph_state import GraphState
 from working_context import context_instructions
+from debug_log import debug
 
 from dotenv import load_dotenv
 
@@ -507,18 +508,17 @@ Use them only if they help determine the user's intent.
     # ---------------------------------------------------------
     messages.extend(conversation_messages)
 
+    debug("AGENT", "start", agent="orchestrator",
+          conversation_id=state.get("conversation_id"), user_id=state.get("user_id"),
+          message_count=len(conversation_messages), fact_count=len(user_facts or []))
     response: OrchestratorDecision = (
         llm.with_structured_output(OrchestratorDecision)
         .invoke(messages)
     )
 
-    print("========== Orchestrator NODE ==========")
-    print("User Facts:", user_facts)
-    print(
-        f"{response.intent} "
-        f"{response.confidence} "
-        f"{response.routing_decision}"
-    )
+    debug("AGENT", "decision", agent="orchestrator", intent=response.intent,
+          confidence=response.confidence, route=response.routing_decision,
+          has_clarification=bool(response.clarification_question))
 
     return {
         "intent": response.intent,

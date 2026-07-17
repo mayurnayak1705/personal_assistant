@@ -13,6 +13,7 @@ from mcp_servers.calendar.client import calendar_client
 from daily_briefing import generate_daily_briefing
 from daily_briefing_store import set_daily_briefing_preference
 from working_context import ToolExecutionResult, build_tool_event, context_instructions
+from debug_log import debug
 
 
 WHATSAPP_SYSTEM_PROMPT = """
@@ -88,7 +89,7 @@ GMAIL_SYSTEM_PROMPT = """
 You read and manage Gmail exclusively through Gmail MCP tools.
 
 Rules:
-- The configured From address is mayurnayak1705@gmail.com. Never invent or substitute another sender.
+- Use only the Gmail account authenticated by the user or its configured GMAIL_FROM_EMAIL address. Never invent or substitute another sender.
 - Reading, searching, drafting, marking read, and archiving may be executed when requested.
 - Call send_email or reply_to_email only when the user explicitly asks to send or reply. A request to "write" or "compose" without "send" creates a draft.
 - Scheduling an email is explicit authorization to store it for automatic delivery at the requested time. Call schedule_email immediately when recipient, content, and time are clear.
@@ -141,9 +142,9 @@ def _format_briefing_time(value: time) -> str:
 
 
 async def planner_node(state: GraphState):
-    print("========== PLANNER NODE ==========")
-
     intent = state.get("intent")
+    debug("AGENT", "start", agent="planner", intent=intent,
+          conversation_id=state.get("conversation_id"), user_id=state.get("user_id"))
     recent_context = context_instructions(state.get("working_context", []))
     if intent == "whatsapp_messaging":
         try:
@@ -262,8 +263,9 @@ async def planner_node(state: GraphState):
     else:
         events = []
 
-    print("========== PLANNER RESPONSE ==========")
-    print(result)
+    debug("AGENT", "complete", agent="planner", intent=intent, tool=tool_name,
+          error_count=len(state.get("errors", [])), result_type=type(result).__name__,
+          response_chars=len(str(result)), event_count=len(events))
     return {
         "planner_result": {
             "status": "failed" if "currently unavailable" in result else "success",

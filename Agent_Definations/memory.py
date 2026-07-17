@@ -11,6 +11,7 @@ from conversation_utils import format_conversation
 from client import MCPClient
 from mcp_servers.expense.client import expense_client
 from working_context import context_instructions
+from debug_log import debug
 
 llm = ChatOpenAI(model="gpt-4.1")
 
@@ -359,7 +360,8 @@ After the tool returns, respond naturally to the user.
 
 
 async def memory_node(state: GraphState):
-    print("========== Memory NODE ==========")
+    debug("AGENT", "start", agent="memory", intent=state.get("intent"),
+          conversation_id=state.get("conversation_id"), user_id=state.get("user_id"))
 
     if state["intent"] == "expense_tracking":
         execution = await expense_client.execute(
@@ -378,8 +380,8 @@ async def memory_node(state: GraphState):
         artifacts = {}
         events = []
 
-    print("========== Memory RESPONSE ==========")
-    print(response_text)
+    debug("AGENT", "complete", agent="memory", intent=state.get("intent"),
+          response_chars=len(str(response_text)), event_count=len(events), artifact_count=len(artifacts))
 
     return {
         "memory_result": {

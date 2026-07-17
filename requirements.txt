@@ -14,7 +14,7 @@ fastmcp
 pydantic
 python-dotenv
 
-psycopg2-binary
+psycopg[binary]
 chromadb
 
 jinja2
@@ -25,6 +25,7 @@ requests
 
 google-api-python-client
 google-auth-oauthlib
+keyring
 google-auth-httplib2
 
 tiktoken

@@ -4,6 +4,7 @@ from langchain_openai import ChatOpenAI
 from graph_state import GraphState
 from conversation_utils import format_conversation
 from working_context import format_working_context
+from debug_log import debug
 
 llm = ChatOpenAI(model="gpt-4.1")
 
@@ -86,13 +87,16 @@ Use only the information provided.
 
 
 async def respond_node(state: GraphState):
-    print("========== RESPOND NODE ==========")
+    debug("AGENT", "start", agent="respond", intent=state.get("intent"),
+          conversation_id=state.get("conversation_id"))
 
     # Tool-backed planner output is transactional evidence. Passing it through
     # verbatim prevents a second LLM from turning a clarification into a false
     # claim that a message was sent.
     planner_result = state.get("planner_result")
     if planner_result and planner_result.get("result"):
+        debug("AGENT", "complete", agent="respond", source="planner_passthrough",
+              response_chars=len(str(planner_result["result"])))
         return {"final_response": str(planner_result["result"])}
 
     # Expense output is grounded in MCP tool results and already formatted as
@@ -100,6 +104,8 @@ async def respond_node(state: GraphState):
     # expand a bounded report back into an unbounded transaction list.
     memory_result = state.get("memory_result")
     if state.get("intent") == "expense_tracking" and memory_result and memory_result.get("result"):
+        debug("AGENT", "complete", agent="respond", source="expense_passthrough",
+              response_chars=len(str(memory_result["result"])))
         return {"final_response": str(memory_result["result"])}
 
     context = f"""
@@ -138,8 +144,8 @@ Clarification Question:
 
     response = await llm.ainvoke(messages)
 
-    print("========== RESPOND RESPONSE ==========")
-    print(response.content)
+    debug("AGENT", "complete", agent="respond", source="llm",
+          response_chars=len(str(response.content)))
 
     return {
         "final_response": response.content

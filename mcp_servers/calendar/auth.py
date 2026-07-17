@@ -11,6 +11,8 @@ from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 
+from google_oauth import GoogleAuthenticationRequired, load_credentials
+
 
 SCOPES = ["https://www.googleapis.com/auth/calendar.events"]
 DEFAULT_TOKEN_PATH = Path(__file__).with_name("token.json")
@@ -51,6 +53,10 @@ def authorize(client_secret_file: str, destination: str | None = None) -> Path:
 
 
 def credentials() -> Credentials:
+    try:
+        return load_credentials(os.getenv("DEEP_THOUGHT_USER_ID", "mayur"))
+    except GoogleAuthenticationRequired:
+        pass
     path = token_path()
     if not path.is_file():
         raise CalendarAuthenticationRequired(

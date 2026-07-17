@@ -2,10 +2,13 @@ import asyncio
 import uuid
 import traceback
 import logging
+import html
+import json
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import HTMLResponse
 from langchain_core.messages import HumanMessage, AIMessage
 
 from schemas import (
@@ -17,6 +20,8 @@ from schemas import (
     TaskActionRequest,
     WhatsAppToggleRequest,
     GmailActionRequest,
+    ExpenseImportActionRequest,
+    GoogleOAuthConfigRequest,
 )
 from graph import app
 from session_store import add_turn, get_turns, pop_session
@@ -34,6 +39,15 @@ from working_context import build_tool_event
 from working_context_store import fetch_working_context, save_working_context_events
 from daily_briefing import generate_daily_briefing
 from daily_briefing_store import get_daily_briefing_preference
+from google_oauth import (
+    begin_authorization,
+    complete_authorization,
+    connection_status as google_connection_status,
+    delete_credentials as delete_google_credentials,
+    save_client_config as save_google_client_config,
+)
+from expense_email_ingestion import pending_imports, resolve_import, scan_transaction_emails
+from debug_log import debug
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -113,8 +127,8 @@ async def chat(request: ChatRequest):
             for t in prior_turns
         ]
         user_facts = await asyncio.to_thread(fetch_user_facts)
-        print("========== USER FACTS ==========")
-        print(user_facts)
+        debug("API", "chat_context", conversation_id=conversation_id, user_id=user_id,
+              prior_turn_count=len(prior_turns), user_facts_chars=len(str(user_facts)))
         state = {
             # Conversation - now includes everything said earlier in this
             # session, not just the latest message
@@ -313,6 +327,80 @@ async def gmail_status():
         return {"authenticated": False, "email": None, "error": str(exc)}
 
 
+@router.get("/integrations/google/status")
+async def google_integration_status(user_id: str = "mayur"):
+    """Return the shared Gmail and Calendar connection state."""
+    return await asyncio.to_thread(google_connection_status, user_id)
+
+
+@router.post("/integrations/google/connect")
+async def google_integration_connect(request: Request, user_id: str = "mayur"):
+    """Start a PKCE-protected Google desktop authorization flow."""
+    redirect_uri = str(request.url_for("google_oauth_callback"))
+    try:
+        return begin_authorization(user_id=user_id, redirect_uri=redirect_uri)
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@router.post("/integrations/google/configure")
+async def google_integration_configure(request: GoogleOAuthConfigRequest):
+    """Validate and store a user-provided Google Desktop OAuth JSON."""
+    try:
+        return await asyncio.to_thread(
+            save_google_client_config,
+            request.user_id,
+            request.client_config,
+        )
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get(
+    "/integrations/google/callback",
+    response_class=HTMLResponse,
+    name="google_oauth_callback",
+)
+async def google_oauth_callback(
+    request: Request,
+    state: str | None = None,
+    code: str | None = None,
+    error: str | None = None,
+):
+    """Exchange Google's authorization code and notify the Settings popup."""
+    success = False
+    message = "Google connection was cancelled."
+    if not error and state and code:
+        try:
+            await asyncio.to_thread(complete_authorization, state=state, code=code)
+            success = True
+            message = "Google connected. You can close this window."
+        except Exception as exc:
+            message = str(exc)
+    elif error:
+        message = f"Google authorization failed: {error}"
+
+    origin = f"{request.url.scheme}://{request.url.netloc}"
+    payload = json.dumps({"type": "deep-thought-google-oauth", "success": success})
+    return HTMLResponse(
+        "<!doctype html><html><head><meta charset='utf-8'><title>Deep Thought Google connection</title>"
+        "<style>body{font:16px system-ui;background:#0b1020;color:#f8fafc;display:grid;place-items:center;"
+        "min-height:100vh;margin:0}.card{max-width:520px;padding:28px;border:1px solid #29334f;"
+        "border-radius:18px;background:#121a2d;text-align:center}p{color:#aab4ca}</style></head><body>"
+        f"<div class='card'><h1>{'Connected' if success else 'Connection failed'}</h1>"
+        f"<p>{html.escape(message)}</p></div><script>"
+        f"if(window.opener){{window.opener.postMessage({payload},{json.dumps(origin)});}}"
+        "setTimeout(()=>window.close(),700);</script></body></html>"
+    )
+
+
+@router.post("/integrations/google/disconnect")
+async def google_integration_disconnect(user_id: str = "mayur"):
+    """Remove locally stored Google authorization for this user."""
+    await asyncio.to_thread(delete_google_credentials, user_id)
+    return {"connected": False, "gmail": False, "calendar": False}
+
+
 @router.get("/calendar/status")
 async def calendar_status():
     """Return Calendar OAuth connection status without exposing token data."""
@@ -336,6 +424,43 @@ async def gmail_unread(limit: int = 20):
     """Return unread inbox messages for the Gmail UI panel."""
     try:
         return await gmail_client.unread_emails(limit=max(1, min(limit, 50)))
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@router.get("/expense-imports")
+async def expense_import_notifications(scan: bool = False, limit: int = 50):
+    """Return Gmail-derived expenses awaiting review, optionally scanning first."""
+    try:
+        scan_result = await asyncio.to_thread(scan_transaction_emails, min(limit, 50)) if scan else None
+        imports = await asyncio.to_thread(pending_imports, limit)
+        return {"imports": imports, "count": len(imports), "scan": scan_result}
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@router.post("/expense-imports/{import_id}/resolve")
+async def resolve_expense_import(import_id: int, request: ExpenseImportActionRequest):
+    """Keep, delete, or categorize an automatically imported expense."""
+    try:
+        result = await asyncio.to_thread(resolve_import, import_id, request.action, request.category)
+        if not result:
+            raise HTTPException(status_code=404, detail="Expense import not found")
+        result["suggestion"] = await _record_action_events(
+            conversation_id=request.conversation_id or f"ui:{request.user_id}",
+            user_id=request.user_id,
+            events=[build_tool_event(
+                integration="expenses",
+                tool_name=f"{request.action}_email_import",
+                arguments={"import_id": import_id, "category": request.category},
+                output=result,
+            )],
+        )
+        return result
+    except HTTPException:
+        raise
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
@@ -487,6 +612,27 @@ async def update_whatsapp_state(request: WhatsAppToggleRequest):
             status_code=503,
             detail={**whatsapp_client.status, "error": str(exc)},
         ) from exc
+
+
+@router.post("/whatsapp/pairing/start")
+async def start_whatsapp_pairing():
+    """Start first-time WhatsApp linking and QR generation."""
+    try:
+        return await whatsapp_client.start_pairing()
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@router.get("/whatsapp/pairing")
+async def whatsapp_pairing_status():
+    """Return the latest QR image or terminal pairing state."""
+    return whatsapp_client.pairing_status
+
+
+@router.delete("/whatsapp/pairing")
+async def cancel_whatsapp_pairing():
+    """Cancel an in-progress QR pairing attempt."""
+    return await whatsapp_client.cancel_pairing()
 
 
 @router.get("/whatsapp/contacts")

@@ -48,6 +48,22 @@ const settingsBtn = document.getElementById("settingsBtn");
 const settingsPanel = document.getElementById("settingsPanel");
 const whatsappToggle = document.getElementById("whatsappToggle");
 const whatsappToggleDescription = document.getElementById("whatsappToggleDescription");
+const whatsappIntegrationStatus = document.getElementById("whatsappIntegrationStatus");
+const whatsappConnectBtn = document.getElementById("whatsappConnectBtn");
+const whatsappPairingModal = document.getElementById("whatsappPairingModal");
+const whatsappPairingClose = document.getElementById("whatsappPairingClose");
+const whatsappPairingCancel = document.getElementById("whatsappPairingCancel");
+const whatsappPairingRetry = document.getElementById("whatsappPairingRetry");
+const whatsappQrImage = document.getElementById("whatsappQrImage");
+const whatsappQrLoader = document.getElementById("whatsappQrLoader");
+const whatsappPairingMessage = document.getElementById("whatsappPairingMessage");
+const googleConnectBtn = document.getElementById("googleConnectBtn");
+const calendarGoogleConnectBtn = document.getElementById("calendarGoogleConnectBtn");
+const gmailIntegrationStatus = document.getElementById("gmailIntegrationStatus");
+const calendarIntegrationStatus = document.getElementById("calendarIntegrationStatus");
+const gmailIntegrationDescription = document.getElementById("gmailIntegrationDescription");
+const calendarIntegrationDescription = document.getElementById("calendarIntegrationDescription");
+const googleOauthFileInput = document.getElementById("googleOauthFileInput");
 const themeToggle = document.getElementById("themeToggle");
 const themeToggleDescription = document.getElementById("themeToggleDescription");
 const reminderPopup = document.getElementById("reminderPopup");
@@ -63,6 +79,9 @@ const reminderNotificationCount = document.getElementById("reminderNotificationC
 const taskNotificationList = document.getElementById("taskNotificationList");
 const taskNotificationEmpty = document.getElementById("taskNotificationEmpty");
 const taskNotificationCount = document.getElementById("taskNotificationCount");
+const expenseImportNotificationList = document.getElementById("expenseImportNotificationList");
+const expenseImportNotificationEmpty = document.getElementById("expenseImportNotificationEmpty");
+const expenseImportNotificationCount = document.getElementById("expenseImportNotificationCount");
 const replyContext = document.getElementById("replyContext");
 const replyContactName = document.getElementById("replyContactName");
 const cancelReplyBtn = document.getElementById("cancelReplyBtn");
@@ -72,8 +91,144 @@ const WHATSAPP_CURSOR_KEY = "whatsapp_message_cursor";
 const USER_ID = "mayur";
 const THEME_KEY = "assistant_theme";
 let whatsappEnabled = false;
+let whatsappPaired = false;
 let whatsappStateLoaded = false;
 let whatsappToggleBusy = false;
+let whatsappPairingStatus = "idle";
+let whatsappPairingPollTimer = null;
+let googleConnected = false;
+let googleConfigured = false;
+let googleConnectionBusy = false;
+
+function setGoogleIntegrationState(status){
+    googleConfigured = Boolean(status?.configured);
+    googleConnected = Boolean(status?.connected);
+    const badges = [gmailIntegrationStatus, calendarIntegrationStatus];
+    badges.forEach((badge) => {
+        badge.textContent = googleConnected
+            ? "Connected"
+            : googleConfigured
+            ? "Ready to connect"
+            : "Setup required";
+        badge.classList.toggle("integration-status-live", googleConnected);
+        badge.classList.toggle(
+            "integration-status-error",
+            googleConfigured && !googleConnected && Boolean(status?.error)
+        );
+    });
+    const account = status?.email || "your Google account";
+    gmailIntegrationDescription.textContent = googleConnected
+        ? `Connected as ${account}.`
+        : googleConfigured
+        ? "OAuth configuration saved locally. Connect your Google account."
+        : "Connect Google to send, schedule and read email.";
+    calendarIntegrationDescription.textContent = googleConnected
+        ? "Calendar access uses this same Google connection."
+        : googleConfigured
+        ? "Calendar will use the configured Google OAuth project."
+        : "The same Google connection manages meetings and events.";
+    [googleConnectBtn, calendarGoogleConnectBtn].forEach((button) => {
+        button.textContent = googleConnected
+            ? "Disconnect"
+            : googleConfigured
+            ? "Connect"
+            : "Add OAuth JSON";
+        button.disabled = googleConnectionBusy;
+    });
+}
+
+async function loadGoogleIntegrationState(){
+    try{
+        const response = await fetch(
+            `/api/integrations/google/status?user_id=${encodeURIComponent(USER_ID)}`
+        );
+        if(!response.ok) throw new Error("Google status unavailable");
+        setGoogleIntegrationState(await response.json());
+    }catch(err){
+        setGoogleIntegrationState({connected:false,error:err.message});
+    }
+}
+
+async function toggleGoogleIntegration(){
+    if(googleConnectionBusy) return;
+    if(!googleConfigured){
+        googleOauthFileInput.click();
+        return;
+    }
+    googleConnectionBusy = true;
+    setGoogleIntegrationState({connected:googleConnected});
+    try{
+        if(googleConnected){
+            if(!window.confirm("Disconnect Gmail and Google Calendar from Deep Thought?")) return;
+            const response = await fetch(
+                `/api/integrations/google/disconnect?user_id=${encodeURIComponent(USER_ID)}`,
+                {method:"POST"}
+            );
+            if(!response.ok) throw new Error("Could not disconnect Google");
+            googleConnected = false;
+            showNotice("Google disconnected", "G");
+        }else{
+            const popup = window.open("about:blank", "deep-thought-google-oauth", "width=560,height=720");
+            const response = await fetch(
+                `/api/integrations/google/connect?user_id=${encodeURIComponent(USER_ID)}`,
+                {method:"POST"}
+            );
+            const data = await response.json();
+            if(!response.ok || !data.authorization_url){
+                if(popup) popup.close();
+                throw new Error(data.detail || "Could not start Google connection");
+            }
+            if(popup){
+                popup.location.href = data.authorization_url;
+                popup.focus();
+            }else{
+                window.location.href = data.authorization_url;
+            }
+        }
+    }catch(err){
+        showNotice(err.message || "Google connection failed", "!", 5000);
+    }finally{
+        googleConnectionBusy = false;
+        await loadGoogleIntegrationState();
+    }
+}
+
+googleOauthFileInput.addEventListener("change", async () => {
+    const file = googleOauthFileInput.files?.[0];
+    googleOauthFileInput.value = "";
+    if(!file) return;
+    googleConnectionBusy = true;
+    setGoogleIntegrationState({configured:googleConfigured,connected:googleConnected});
+    try{
+        const clientConfig = JSON.parse(await file.text());
+        const response = await fetch("/api/integrations/google/configure", {
+            method:"POST",
+            headers:{"Content-Type":"application/json"},
+            body:JSON.stringify({user_id:USER_ID,client_config:clientConfig})
+        });
+        const data = await response.json();
+        if(!response.ok) throw new Error(data.detail || "Invalid Google OAuth JSON");
+        showNotice("Google OAuth configuration added", "G", 4200);
+    }catch(err){
+        showNotice(err.message || "Could not read OAuth JSON", "!", 5200);
+    }finally{
+        googleConnectionBusy = false;
+        await loadGoogleIntegrationState();
+    }
+});
+
+googleConnectBtn.addEventListener("click", toggleGoogleIntegration);
+calendarGoogleConnectBtn.addEventListener("click", toggleGoogleIntegration);
+window.addEventListener("message", async (event) => {
+    if(event.origin !== window.location.origin) return;
+    if(event.data?.type !== "deep-thought-google-oauth") return;
+    await loadGoogleIntegrationState();
+    showNotice(event.data.success ? "Google connected" : "Google connection failed", "G", 4500);
+});
+loadGoogleIntegrationState().then(() => {
+    pollExpenseImports(false);
+    setTimeout(() => pollExpenseImports(true), 2000);
+});
 
 function applyTheme(theme, persist = true){
     const selected = theme === "light" ? "light" : "dark";
@@ -625,24 +780,47 @@ function buildExpenseTransactions(transactions, omittedCount){
 
 /* ---------- Incoming WhatsApp messages ---------- */
 
-function setWhatsAppStatus({enabled, connected, error = null}){
+function setWhatsAppStatus({enabled, connected, paired, pairing_status, error = null}){
     whatsappEnabled = Boolean(enabled);
+    if(paired !== undefined) whatsappPaired = Boolean(paired);
+    if(pairing_status) whatsappPairingStatus = pairing_status;
     whatsappStateLoaded = true;
     const dot = whatsappStatus.querySelector(".pill-dot");
-    dot.classList.toggle("ok", whatsappEnabled && connected);
-    dot.classList.toggle("pending", whatsappEnabled && !connected);
+    dot.classList.toggle("ok", whatsappPaired && whatsappEnabled && connected);
+    dot.classList.toggle("pending", whatsappPaired && whatsappEnabled && !connected);
     dot.classList.toggle("off", !whatsappEnabled);
-    whatsappStatusText.textContent = !whatsappEnabled
+    whatsappStatusText.textContent = !whatsappPaired
+        ? "WhatsApp Setup Required"
+        : !whatsappEnabled
         ? "WhatsApp Off"
         : connected
         ? "WhatsApp Connected"
         : "WhatsApp Connecting";
+    whatsappIntegrationStatus.textContent = !whatsappPaired
+        ? "Setup required"
+        : !whatsappEnabled
+        ? "Off"
+        : connected
+        ? "Connected"
+        : "Ready";
+    whatsappIntegrationStatus.classList.toggle(
+        "integration-status-live",
+        whatsappPaired && whatsappEnabled && Boolean(connected)
+    );
+    whatsappIntegrationStatus.classList.toggle(
+        "integration-status-error",
+        whatsappPaired && Boolean(error)
+    );
+    whatsappConnectBtn.classList.toggle("hidden", whatsappPaired);
+    whatsappToggle.classList.toggle("hidden", !whatsappPaired);
     whatsappToggle.setAttribute("aria-checked", String(whatsappEnabled));
     whatsappToggle.setAttribute(
         "aria-label",
         whatsappEnabled ? "Disable WhatsApp" : "Enable WhatsApp"
     );
-    whatsappToggleDescription.textContent = !whatsappEnabled
+    whatsappToggleDescription.textContent = !whatsappPaired
+        ? "Link WhatsApp by scanning a QR code."
+        : !whatsappEnabled
         ? "Sending and receiving are disabled."
         : connected
         ? "Connected. Sending and receiving are enabled."
@@ -656,7 +834,7 @@ async function loadWhatsAppState(){
         if(!response.ok) throw new Error("state unavailable");
         const state = await response.json();
         setWhatsAppStatus(state);
-        if(state.enabled) pollWhatsApp();
+        if(state.enabled && state.paired) pollWhatsApp();
     }catch(_err){
         whatsappStateLoaded = true;
         setWhatsAppStatus({enabled:false, connected:false, error:"WhatsApp status is unavailable."});
@@ -694,6 +872,101 @@ whatsappToggle.addEventListener("click", async () => {
     }finally{
         whatsappToggleBusy = false;
         whatsappToggle.disabled = false;
+    }
+});
+
+function renderWhatsAppPairing(state){
+    whatsappPairingStatus = state.status || state.pairing_status || "starting";
+    const hasQr = whatsappPairingStatus === "qr" && Boolean(state.qr_image);
+    whatsappQrImage.classList.toggle("hidden", !hasQr);
+    whatsappQrLoader.classList.toggle(
+        "hidden",
+        !["starting", "success"].includes(whatsappPairingStatus)
+    );
+    if(hasQr) whatsappQrImage.src = state.qr_image;
+    else whatsappQrImage.removeAttribute("src");
+    whatsappPairingMessage.textContent = state.message || (
+        hasQr ? "Scan this QR code with WhatsApp." : "Requesting a QR code…"
+    );
+    whatsappPairingMessage.classList.toggle("success", whatsappPairingStatus === "success");
+    whatsappPairingMessage.classList.toggle(
+        "error",
+        ["error", "expired"].includes(whatsappPairingStatus)
+    );
+    whatsappPairingRetry.classList.toggle(
+        "hidden",
+        !["error", "expired"].includes(whatsappPairingStatus)
+    );
+    whatsappPairingCancel.textContent = whatsappPairingStatus === "success" ? "Close" : "Cancel";
+    if(state.paired !== undefined){
+        setWhatsAppStatus(state);
+    }
+}
+
+function stopWhatsAppPairingPolling(){
+    if(whatsappPairingPollTimer){
+        clearInterval(whatsappPairingPollTimer);
+        whatsappPairingPollTimer = null;
+    }
+}
+
+async function pollWhatsAppPairing(){
+    try{
+        const response = await fetch("/api/whatsapp/pairing");
+        if(!response.ok) throw new Error("Pairing status unavailable");
+        const state = await response.json();
+        renderWhatsAppPairing(state);
+        if(state.status === "success"){
+            stopWhatsAppPairingPolling();
+            showNotice("WhatsApp connected", "💬", 4200);
+        }else if(["error", "expired"].includes(state.status)){
+            stopWhatsAppPairingPolling();
+        }
+    }catch(err){
+        renderWhatsAppPairing({status:"error",message:err.message});
+        stopWhatsAppPairingPolling();
+    }
+}
+
+async function startWhatsAppPairing(){
+    whatsappPairingModal.classList.remove("hidden");
+    renderWhatsAppPairing({status:"starting",message:"Requesting a QR code from WhatsApp…"});
+    try{
+        const response = await fetch("/api/whatsapp/pairing/start", {method:"POST"});
+        const state = await response.json();
+        if(!response.ok) throw new Error(state.detail || "Could not start WhatsApp pairing");
+        renderWhatsAppPairing(state);
+        stopWhatsAppPairingPolling();
+        whatsappPairingPollTimer = setInterval(pollWhatsAppPairing, 1000);
+        await pollWhatsAppPairing();
+    }catch(err){
+        renderWhatsAppPairing({status:"error",message:err.message});
+    }
+}
+
+async function closeWhatsAppPairing(){
+    stopWhatsAppPairingPolling();
+    whatsappPairingModal.classList.add("hidden");
+    if(["starting", "qr"].includes(whatsappPairingStatus)){
+        try{
+            await fetch("/api/whatsapp/pairing", {method:"DELETE"});
+        }catch(_err){
+            // The helper also exits on its own when its QR sequence expires.
+        }
+    }
+    await loadWhatsAppState();
+}
+
+whatsappConnectBtn.addEventListener("click", startWhatsAppPairing);
+whatsappPairingRetry.addEventListener("click", startWhatsAppPairing);
+whatsappPairingClose.addEventListener("click", closeWhatsAppPairing);
+whatsappPairingCancel.addEventListener("click", closeWhatsAppPairing);
+whatsappPairingModal.addEventListener("click", (event) => {
+    if(event.target === whatsappPairingModal) closeWhatsAppPairing();
+});
+document.addEventListener("keydown", (event) => {
+    if(event.key === "Escape" && !whatsappPairingModal.classList.contains("hidden")){
+        closeWhatsAppPairing();
     }
 });
 
@@ -738,6 +1011,95 @@ function addWhatsAppMessage(message){
     showNotice(`WhatsApp from ${sender}`, "💬", 4500);
 }
 
+function addWhatsAppBacklog(messageBatch){
+    welcome.style.display = "none";
+    chatWindow.classList.add("active");
+
+    const groups = new Map();
+    for(const message of messageBatch){
+        const sender = message.contact_name || message.phone_number || "WhatsApp";
+        const key = message.phone_number || message.chat_jid || sender;
+        if(!groups.has(key)) groups.set(key, {sender, messages:[], phoneNumber:message.phone_number || ""});
+        groups.get(key).messages.push(message);
+    }
+
+    const wrapper = document.createElement("div");
+    wrapper.className = "message whatsapp whatsapp-backlog";
+    const bubble = document.createElement("div");
+    bubble.className = "bubble";
+
+    const header = document.createElement("div");
+    header.className = "whatsapp-backlog-head";
+    const heading = document.createElement("div");
+    const eyebrow = document.createElement("span");
+    eyebrow.className = "message-meta";
+    eyebrow.textContent = "WhatsApp · While you were away";
+    const title = document.createElement("strong");
+    title.textContent = `${messageBatch.length} messages from ${groups.size} ${groups.size === 1 ? "contact" : "contacts"}`;
+    heading.append(eyebrow, title);
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = "whatsapp-backlog-toggle";
+    toggle.textContent = "View messages";
+    toggle.setAttribute("aria-expanded", "false");
+    header.append(heading, toggle);
+
+    const summary = document.createElement("div");
+    summary.className = "whatsapp-backlog-summary";
+    const details = document.createElement("div");
+    details.className = "whatsapp-backlog-details hidden";
+
+    for(const group of groups.values()){
+        const latest = group.messages[group.messages.length - 1];
+        const row = document.createElement("div");
+        row.className = "whatsapp-backlog-row";
+        const copy = document.createElement("div");
+        const sender = document.createElement("strong");
+        sender.textContent = group.sender;
+        const preview = document.createElement("span");
+        preview.textContent = `${group.messages.length} ${group.messages.length === 1 ? "message" : "messages"} · ${latest.body || "Message"}`;
+        copy.append(sender, preview);
+        const reply = document.createElement("button");
+        reply.type = "button";
+        reply.className = "whatsapp-reply-btn";
+        reply.textContent = "Reply";
+        reply.addEventListener("click", () => setReplyTarget({
+            name:group.sender,
+            phoneNumber:group.phoneNumber
+        }));
+        row.append(copy, reply);
+        summary.appendChild(row);
+
+        for(const message of group.messages){
+            const item = document.createElement("div");
+            item.className = "whatsapp-backlog-message";
+            const itemMeta = document.createElement("span");
+            const parsedTime = new Date(message.timestamp);
+            itemMeta.textContent = Number.isNaN(parsedTime.getTime())
+                ? group.sender
+                : `${group.sender} · ${parsedTime.toLocaleString()}`;
+            const itemBody = document.createElement("p");
+            itemBody.textContent = message.body || "";
+            item.append(itemMeta, itemBody);
+            details.appendChild(item);
+        }
+    }
+
+    toggle.addEventListener("click", () => {
+        const expanded = toggle.getAttribute("aria-expanded") !== "true";
+        toggle.setAttribute("aria-expanded", String(expanded));
+        toggle.textContent = expanded ? "Hide messages" : "View messages";
+        details.classList.toggle("hidden", !expanded);
+        summary.classList.toggle("hidden", expanded);
+    });
+
+    bubble.append(header, summary, details);
+    wrapper.appendChild(bubble);
+    messages.appendChild(wrapper);
+    chatWindow.scrollTop = chatWindow.scrollHeight;
+    showNotice(`${messageBatch.length} WhatsApp messages received`, "💬", 4500);
+}
+
 let whatsappPolling = false;
 
 async function pollWhatsApp(){
@@ -747,7 +1109,8 @@ async function pollWhatsApp(){
         const storedCursor = sessionStorage.getItem(WHATSAPP_CURSOR_KEY);
         const query = new URLSearchParams({
             user_id:USER_ID,
-            conversation_id:conversationId
+            conversation_id:conversationId,
+            limit:"200"
         });
         if(storedCursor !== null) query.set("after_id", storedCursor);
         const response = await fetch(`/api/whatsapp/messages?${query.toString()}`);
@@ -764,9 +1127,9 @@ async function pollWhatsApp(){
         }
 
         setWhatsAppStatus({enabled:true, connected:data.connected !== false});
-        for(const message of (data.messages || [])){
-            addWhatsAppMessage(message);
-        }
+        const incoming = data.messages || [];
+        if(incoming.length >= 4) addWhatsAppBacklog(incoming);
+        else incoming.forEach(addWhatsAppMessage);
         if(data.cursor !== null && data.cursor !== undefined){
             sessionStorage.setItem(WHATSAPP_CURSOR_KEY, String(data.cursor));
         }
@@ -1031,7 +1394,7 @@ async function loadGmailPanel(force = false){
             renderScheduledEmails([]);
             return;
         }
-        gmailAccount.textContent = `From: ${status.email || "mayurnayak1705@gmail.com"}`;
+        gmailAccount.textContent = `From: ${status.email || "connected Gmail account"}`;
         const [unreadResponse, scheduledResponse] = await Promise.all([
             fetch("/api/gmail/unread?limit=20"),
             fetch(`/api/gmail/scheduled?user_id=${encodeURIComponent(USER_ID)}&limit=20`)
@@ -1060,6 +1423,8 @@ const reminderQueue = [];
 const knownReminderIds = new Set();
 const notificationReminders = new Map();
 const notificationTasks = new Map();
+const notificationExpenseImports = new Map();
+const knownExpenseImportIds = new Set();
 const knownTaskIds = new Set();
 let taskOverview = [];
 let taskOverviewFilter = "active";
@@ -1068,19 +1433,168 @@ let activeReminder = null;
 let reminderPolling = false;
 let reminderPopupTimer = null;
 let taskPolling = false;
+let expenseImportPolling = false;
 
 function updateNotificationIndicator(){
     const hasPending = Boolean(activeReminder)
         || reminderQueue.length > 0
         || notificationReminders.size > 0
-        || notificationTasks.size > 0;
+        || notificationTasks.size > 0
+        || notificationExpenseImports.size > 0;
     notifDot.classList.toggle("on", hasPending);
 }
 
 function updateNotificationCount(){
-    notificationCount.textContent = String(notificationReminders.size + notificationTasks.size);
+    notificationCount.textContent = String(
+        notificationReminders.size + notificationTasks.size + notificationExpenseImports.size
+    );
     reminderNotificationCount.textContent = String(notificationReminders.size);
     taskNotificationCount.textContent = String(notificationTasks.size);
+    expenseImportNotificationCount.textContent = String(notificationExpenseImports.size);
+}
+
+const EXPENSE_IMPORT_CATEGORIES = [
+    "food", "transport", "housing", "utilities", "health", "education", "family_kids",
+    "entertainment", "shopping", "subscriptions", "personal_care", "gifts_donations",
+    "finance_fees", "business", "travel", "home", "pet", "taxes", "investments", "misc"
+];
+
+function renderExpenseImportNotifications(){
+    expenseImportNotificationList.replaceChildren();
+    const imports = Array.from(notificationExpenseImports.values());
+    expenseImportNotificationEmpty.classList.toggle("hidden", imports.length > 0);
+    for(const imported of imports){
+        const item = document.createElement("article");
+        item.className = "notification-item notification-expense-import";
+        const head = document.createElement("div");
+        head.className = "notification-item-head";
+        const icon = document.createElement("span");
+        icon.className = "notification-item-icon";
+        icon.textContent = "₹";
+        const content = document.createElement("div");
+        const title = document.createElement("h3");
+        title.textContent = `${formatINR(imported.amount)} · ${imported.merchant || "Bank transaction"}`;
+        const description = document.createElement("p");
+        description.textContent = `Added from ${imported.bank_name || "bank"} email on ${imported.transaction_date}.`;
+        content.append(title, description);
+        head.append(icon, content);
+        item.appendChild(head);
+
+        if(imported.status === "needs_category"){
+            const prompt = document.createElement("p");
+            prompt.className = "expense-category-prompt";
+            prompt.textContent = "Which category does this expense belong to?";
+            item.appendChild(prompt);
+            if(imported.suggested_category){
+                const suggestion = document.createElement("button");
+                suggestion.type = "button";
+                suggestion.className = "expense-category-suggestion";
+                suggestion.textContent = `Suggested from your history: ${imported.suggested_category.replaceAll("_", " ")}`;
+                suggestion.addEventListener("click", () => resolveExpenseImport(
+                    imported, "categorize", imported.suggested_category, suggestion
+                ));
+                item.appendChild(suggestion);
+            }
+            const select = document.createElement("select");
+            select.setAttribute("aria-label", `Category for ${imported.merchant || "expense"}`);
+            const placeholder = document.createElement("option");
+            placeholder.value = "";
+            placeholder.textContent = "Choose category";
+            select.appendChild(placeholder);
+            EXPENSE_IMPORT_CATEGORIES.forEach(category => {
+                const option = document.createElement("option");
+                option.value = category;
+                option.textContent = category.replaceAll("_", " ");
+                select.appendChild(option);
+            });
+            select.addEventListener("change", () => {
+                if(select.value) resolveExpenseImport(imported, "categorize", select.value, select);
+            });
+            item.appendChild(select);
+        }else{
+            const category = document.createElement("span");
+            category.className = "expense-import-category";
+            category.textContent = `Category: ${(imported.category || "misc").replaceAll("_", " ")}`;
+            item.appendChild(category);
+        }
+
+        const actions = document.createElement("div");
+        actions.className = "notification-item-actions";
+        const keep = document.createElement("button");
+        keep.type = "button";
+        keep.textContent = imported.status === "needs_category" ? "Keep as misc" : "Keep";
+        keep.addEventListener("click", () => resolveExpenseImport(imported, "keep", null, keep));
+        const remove = document.createElement("button");
+        remove.type = "button";
+        remove.className = "expense-import-delete";
+        remove.textContent = "Delete";
+        remove.addEventListener("click", () => resolveExpenseImport(imported, "delete", null, remove));
+        actions.append(keep, remove);
+        item.appendChild(actions);
+        expenseImportNotificationList.appendChild(item);
+    }
+    updateNotificationCount();
+    updateNotificationIndicator();
+}
+
+async function resolveExpenseImport(imported, action, category, control){
+    control.disabled = true;
+    try{
+        const response = await fetch(`/api/expense-imports/${encodeURIComponent(imported.id)}/resolve`, {
+            method:"POST",
+            headers:{"Content-Type":"application/json"},
+            body:JSON.stringify({action, category, user_id:USER_ID, conversation_id:conversationId})
+        });
+        if(!response.ok) throw new Error("Could not update imported expense");
+        const result = await response.json();
+        notificationExpenseImports.delete(imported.id);
+        renderExpenseImportNotifications();
+        if(result.suggestion) addFollowUpSuggestion(result.suggestion);
+        showNotice(
+            action === "delete" ? "Imported expense deleted" : action === "categorize" ? `Expense categorized as ${category.replaceAll("_", " ")}` : "Imported expense kept",
+            action === "delete" ? "🗑" : "₹",
+            4200
+        );
+    }catch(_err){
+        control.disabled = false;
+        showNotice("Could not update the imported expense.", "⚠️", 4500);
+    }
+}
+
+async function pollExpenseImports(scan = false){
+    if(expenseImportPolling || !googleConnected) return;
+    expenseImportPolling = true;
+    try{
+        const response = await fetch(`/api/expense-imports?scan=${scan ? "true" : "false"}&limit=50`);
+        if(!response.ok) return;
+        const data = await response.json();
+        const current = new Set((data.imports || []).map(item => item.id));
+        for(const importId of notificationExpenseImports.keys()){
+            if(!current.has(importId)) notificationExpenseImports.delete(importId);
+        }
+        const newlyImported = [];
+        for(const imported of (data.imports || [])){
+            notificationExpenseImports.set(imported.id, imported);
+            if(!knownExpenseImportIds.has(imported.id)){
+                knownExpenseImportIds.add(imported.id);
+                newlyImported.push(imported);
+            }
+        }
+        renderExpenseImportNotifications();
+        if(newlyImported.length){
+            playNotificationSound("expense");
+            showNotice(
+                newlyImported.length === 1
+                    ? `${formatINR(newlyImported[0].amount)} expense added from Gmail`
+                    : `${newlyImported.length} expenses added from Gmail`,
+                "₹", 5200
+            );
+        }
+    }catch(_err){
+        // Gmail or the network may be temporarily unavailable; retry later.
+    }finally{
+        expenseImportPolling = false;
+    }
 }
 
 function reminderDueLabel(reminder){
@@ -1582,10 +2096,12 @@ loadTaskOverview();
 setInterval(loadTaskOverview, 30000);
 loadGmailPanel();
 setInterval(loadGmailPanel, 30000);
+setInterval(() => pollExpenseImports(true), 60 * 1000);
 document.addEventListener("visibilitychange", () => {
     if(!document.hidden){
         pollReminders();
         pollTasks();
+        pollExpenseImports(true);
     }
 });
 

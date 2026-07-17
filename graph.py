@@ -9,6 +9,7 @@ from Agent_Definations.orchestrator import orchestrator_node
 from Agent_Definations.memory import memory_node
 from Agent_Definations.planner import planner_node
 from Agent_Definations.respond import respond_node
+from debug_log import debug
 
 load_dotenv()
 
@@ -34,7 +35,10 @@ workflow.set_entry_point("orchestrator")
 # ------------------------
 
 def orchestrator_router(state: GraphState):
-    return state["routing_decision"]
+    decision = state["routing_decision"]
+    debug("AGENT", "route", from_agent="orchestrator", to_agent=decision,
+          intent=state.get("intent"), confidence=state.get("confidence"))
+    return decision
 
 
 workflow.add_conditional_edges(

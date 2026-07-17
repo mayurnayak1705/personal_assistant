@@ -1,695 +1,328 @@
-# Personal AI Assistant
+# Deep Thought
 
-> A modular, agentic AI assistant built using **LangGraph**, **FastAPI**, **OpenAI**, and **MCP (Model Context Protocol)**.
+Deep Thought is a local-first personal assistant built with FastAPI, LangGraph,
+OpenAI models and Model Context Protocol (MCP) tools. It combines a web chat UI
+with durable memory, tasks, reminders, expense tracking, Gmail, Google Calendar
+and WhatsApp.
 
-The goal of this project is to build a **truly personal AI assistant** that can reason, remember, plan, and execute tasks using external tools while maintaining long-term memory.
+> Status: active development. The current application is designed primarily
+> for one local user. Review the [security notes](SECURITY.md) before exposing
+> it beyond localhost.
 
-Unlike traditional chatbots, this assistant separates **reasoning**, **memory**, and **execution** into independent agents, making the system highly extensible and easy to maintain.
+![Deep Thought architecture](docs/images/architecture.png)
 
----
+## Capabilities
 
-# Features
+| Area | What it supports |
+| --- | --- |
+| Tasks | Create, list, update, complete, reschedule and track task status |
+| Reminders | Durable reminders, popup/sound notifications and acknowledgement |
+| WhatsApp | QR linking, send/receive, contact disambiguation, replies and backlog grouping |
+| Gmail | Read, search, draft, send, reply, archive and scheduled delivery |
+| Calendar | Create/list/cancel events, Google Meet links and attendee invitations |
+| Expenses | INR expenses, search, editing, reports, budgets, charts and undo |
+| Gmail expense imports | Conservative Indian-bank debit detection with user review and categorization |
+| Memory | PostgreSQL source of truth, Chroma semantic lookup, working context and action history |
+| Daily briefing | Once-per-morning summary of due work, reminders and pending items |
+| UI | Dark/light themes, notification center, task panel, Gmail reader and responsive layout |
 
-- 🧠 Multi-Agent Architecture
-- 💾 Persistent Memory
-- 📋 Intelligent Task Planning
-- 🔧 MCP Tool Integration
-- 📅 Google Calendar scheduling with automatic Google Meet links and attendee invitations
-- 💰 Expense Tracking
-- 🌐 FastAPI Web Interface
-- 🔍 Long-Term User Memory
-- 🗂 Conversation History
-- ⚡ Extensible Tool Ecosystem
-
----
-
-# Architecture
-
-
-# Architecture
-
-The assistant follows a **modular multi-agent architecture** where reasoning, planning, memory, and tool execution are cleanly separated. Each agent has a single responsibility, making the system easier to extend, maintain, and scale.
-
-<p align="center">
-  <img src="docs/images/architecture.png" alt="Personal AI Assistant Architecture" width="1000"/>
-</p>
-
-The architecture is built around three core principles:
-
-- **Reasoning is performed by agents.**
-- **Execution is performed by MCP tools.**
-- **Workflow orchestration is managed by LangGraph.**
-
-This separation allows new capabilities—such as Gmail, WhatsApp, Calendar, GitHub, or other integrations—to be added as independent MCP servers without modifying the core reasoning logic.
-
-Google Calendar setup and chat examples are documented in
-[`docs/calendar.md`](docs/calendar.md).
-
-
-
-# Why MCP?
-
-Every external capability is implemented as an independent MCP server.
-
-This allows the assistant to remain modular and easily extensible.
-
-Benefits include:
-
-- Independent development of tools
-- Language-agnostic servers
-- Easy testing
-- Plug-and-play integrations
-- Clear separation between reasoning and execution
-
-The Planner decides **what** to do, while MCP servers decide **how** to do it.
-
----
-
-# Project Structure
-
-```
-## Project Structure
+## How it works
 
 ```text
-personal_assistant/
-│
-├── Agent_Definations/
-│   ├── orchestrator.py        # Intent detection & routing
-│   ├── memory.py              # Memory retrieval agent
-│   └── respond.py             # Direct response agent
-│
-├── api/
-│   └── routes.py              # FastAPI API endpoints
-│
-├── Databases/
-│   └── Chroma/                # Persistent vector database
-│
-├── Server/                    # Memory MCP Server
-│   ├── server.py
-│   ├── remember.py
-│   ├── search.py
-│   ├── update.py
-│   ├── models.py
-│   ├── postgre_insert.py
-│   ├── postgre_search.py
-│   ├── postgre_update.py
-│   ├── vector_db_insert.py
-│   ├── vector_db_search.py
-│   └── vector_db_update.py
-│
-├── mcp_servers/
-│   └── expense/               # Expense MCP Server
-│
-├── static/
-│   ├── css/
-│   └── js/
-│
-├── templates/
-│   └── index.html
-│
-├── graph.py
-├── graph_state.py
-├── main.py
-├── client.py
-├── chroma_client.py
-├── session_store.py
-├── conversation_utils.py
-├── token_utils.py
-└── requirements.txt
+Browser / natural-language request
+              |
+          FastAPI API
+              |
+     LangGraph orchestrator
+       /        |         \
+  memory     planner     respond
+     |           |
+ PostgreSQL   MCP clients
+ + Chroma        |
+            MCP tool servers
+     (tasks, reminders, Gmail, Calendar,
+         WhatsApp and expense tracker)
 ```
 
+- The **orchestrator** classifies intent and selects an agent.
+- The **planner** executes action-oriented integrations.
+- The **memory agent** handles long-term memory and expense requests.
+- The **response agent** formats grounded agent/tool results.
+- MCP keeps external integrations separate from agent reasoning.
 
----
+See [docs/README.md](docs/README.md) for focused design and integration guides.
 
-# Agent Responsibilities
+## Repository layout
 
-## 1. Orchestrator Agent
-
-The Orchestrator is the entry point of the system.
-
-Responsibilities
-
-- Understand user intent
-- Estimate confidence
-- Decide routing
-- Ask clarification when required
-
-Possible routing decisions
-
-- Planner
-- Memory
-- Planner + Memory
-- Response
-- Clarification
-
-The Orchestrator never executes tools.
-
----
-
-## 2. Planner Agent
-
-The Planner converts natural language into executable actions.
-
-Responsibilities
-
-- Create execution plans
-- Execute MCP tools
-- Retry failures
-- Handle tool responses
-- Generate final outputs
-
-Example
-
-```
-User:
-Add ₹100 shopping expense today
-
-↓
-
-Planner
-
-↓
-
-Expense MCP Tool
-
-↓
-
-Database Updated
-
-↓
-
-Response Returned
+```text
+Agent_Definations/       LangGraph agent nodes and prompts
+Server/                  Memory MCP server and PostgreSQL/Chroma adapters
+api/                     FastAPI routes
+mcp_servers/
+  calendar/              Google Calendar MCP server/client
+  expense/               SQLite expense tracker MCP server/client
+  gmail/                 Gmail MCP server/client and scheduled-email store
+  reminder/              PostgreSQL reminder MCP server/client
+  tasks/                 PostgreSQL tasks MCP server/client
+  whatsappmeow/          Go/whatsmeow MCP server and QR pairing helper
+static/                  Browser JavaScript and CSS
+templates/               Main HTML application
+docs/                    Setup, architecture and feature documentation
+tests/                   Focused automated assertions
+graph.py                 LangGraph workflow
+main.py                  FastAPI application and service lifecycle
 ```
 
----
+## Requirements
 
-## 3. Memory Agent
+- Python 3.11 or newer (3.12 is used during development)
+- PostgreSQL 14 or newer
+- Go 1.22 or newer for WhatsApp
+- An OpenAI API key
+- A Google Cloud Desktop OAuth client for Gmail/Calendar (optional)
+- A WhatsApp account capable of linking a device (optional)
 
-The Memory Agent manages long-term knowledge.
+## Quick start
 
-It is the only component allowed to communicate with storage.
-
-Responsibilities
-
-- Store memories
-- Retrieve memories
-- Search conversations
-- Search documents
-- Store user preferences
-- Update memories
-- Delete memories
-
----
-
-## 4. Response Agent
-
-Handles questions that require no planning or tool execution.
-
-Example
-
-```
-Where is Japan?
-
-↓
-
-Response Agent
-
-↓
-
-Answer
-```
-
----
-
-# Memory Architecture
-
-One of the core components of this assistant is its long-term memory system.
-
-The memory layer is completely isolated from the Planner and Orchestrator.
-
-
----
-                User Message
-                      │
-                      ▼
-               Memory Agent
-                      │
-      ┌───────────────┴──────────────┐
-      ▼                              ▼
-Generate Summary              Generate Embedding
-      │                              │
-      ▼                              ▼
- Store in PostgreSQL          Store in ChromaDB
-      │                              │
-      └───────────────┬──────────────┘
-                      ▼
-                Memory Stored
-
-
-## Why Two Databases?
-
-The assistant separates **structured storage** from **semantic retrieval**.
-
-### PostgreSQL
-
-PostgreSQL acts as the source of truth.
-
-It stores complete records including:
-
-- User profile
-- Conversations
-- Notes
-- Tasks
-- Expenses
-- Metadata
-
-Every memory has a unique ID.
-
----
-
-### ChromaDB
-
-ChromaDB stores only the vector embeddings and lightweight metadata.
-
-Instead of searching every conversation, semantic search first finds the most relevant memory IDs.
-
-These IDs are then used to fetch the complete records from PostgreSQL.
-
-This architecture combines:
-
-- fast semantic search
-- reliable relational storage
-- efficient updates
-- scalable retrieval
-
-## Memory Flow
-
-Saving memory
-
-```
-User says
-
-↓
-
-Memory Agent
-
-↓
-
-Generate Summary
-
-↓
-
-Store Complete Record
-
-↓
-
-Generate Embedding
-
-↓
-
-Store Vector Metadata
-
-↓
-
-Done
-```
-
----
-
-Searching memory
-
-```
-User Query
-
-↓
-
-Embedding Generated
-
-↓
-
-Semantic Search
-
-↓
-
-Relevant IDs
-
-↓
-
-Fetch Full Records
-
-↓
-
-Planner
-```
-
----
-
-## Retrieved Memory
-
-The Planner never queries databases directly.
-
-Instead it receives
-
-```python
-class RetrievedMemory(TypedDict):
-
-    profile: dict
-
-    relevant_conversations: list
-
-    relevant_documents: list
-
-    notes: list
-
-    preferences: dict
-```
-
-This keeps the Planner completely storage independent.
-
----
-
-# Expense Tool
-
-The first MCP tool integrated into the assistant is the Expense Tracker.
-
-Example
-
-```
-Add ₹100 shopping expense on 12 July 2026
-```
-
-Flow
-
-```
-User
-
-↓
-
-Planner
-
-↓
-
-Expense MCP Tool
-
-↓
-
-Expense Server
-
-↓
-
-Database
-
-↓
-
-Response
-```
-
-Supported examples
-
-```
-Add ₹250 dinner expense
-
-Spent ₹80 on coffee
-
-Add ₹1000 shopping yesterday
-
-Show expenses this month
-
-How much did I spend on food?
-```
-
-The Planner only decides **what** should happen.
-
-The Expense MCP Server decides **how** to execute it.
-
----
-
-# MCP Integration
-
-Every capability is exposed as an MCP server.
-
-```
-Planner
-
-↓
-
-MCP Client
-
-↓
-
-Expense Server
-
-↓
-
-Response
-```
-
-Adding new capabilities only requires adding another MCP server.
-
-No planner logic needs to change.
-
----
-
-# Current Features
-
-- Expense Tracking
-- Long-term Memory
-- User Facts
-- Conversation Memory
-- Planner
-- FastAPI Backend
-- Modern Web UI
-
----
-
-# Running Locally
-
-## Clone
+### 1. Clone and create a virtual environment
 
 ```bash
-git clone https://github.com/<username>/personal-ai-assistant.git
-
-cd personal-ai-assistant
-```
-
----
-
-## Create Virtual Environment
-
-Mac/Linux
-
-```bash
+git clone https://github.com/YOUR_USERNAME/deep-thought.git
+cd deep-thought
 python3 -m venv .venv
-```
-
-Windows
-
-```bash
-python -m venv .venv
-```
-
-Activate
-
-Mac/Linux
-
-```bash
 source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
 ```
 
-Windows
+Windows PowerShell activation:
+
+```powershell
+.venv\Scripts\Activate.ps1
+```
+
+### 2. Configure the environment
 
 ```bash
-.venv\Scripts\activate
+cp .env.example .env
 ```
 
----
+Edit `.env` and provide at least `OPENAI_API_KEY` and your PostgreSQL
+credentials. Never commit `.env`, OAuth JSON, tokens or local databases.
 
-## Install Dependencies
+### 3. Run the setup assistant
+
+After editing `.env`, run:
 
 ```bash
-pip install -r requirements.txt
+python scripts/setup.py
 ```
 
----
+The command:
 
-## Configure Environment
+- validates Python and installed runtime packages;
+- verifies `.env` and `OPENAI_API_KEY`;
+- checks Go for the optional WhatsApp integration;
+- connects to PostgreSQL and creates the configured database when the role has
+  permission;
+- applies the core schema and initializes all application PostgreSQL tables;
+- creates local Chroma, credential and SQLite directories;
+- initializes expense and Gmail-expense-import tables.
 
-Create
+It is safe to run repeatedly. Existing databases and tables are preserved.
 
-```
-.env
-```
+Useful options:
 
-Example
-
-```text
-OPENAI_API_KEY=your_openai_api_key
-
-DATABASE_URL=postgresql://...
-
-CHROMA_PATH=./chroma_db
-```
-
----
-
-## Start MCP Servers
-
-Example
-
-```
-python -m mcp.memory.server
-
-python -m mcp.expense.server
+```bash
+python scripts/setup.py --check-only
+python scripts/setup.py --no-create-database
+python scripts/setup.py --skip-database
 ```
 
----
+If the configured PostgreSQL role cannot create databases, use a privileged
+role once and rerun setup:
 
-## Run FastAPI
-
+```bash
+createdb ai_assistant_memory
+python scripts/setup.py --no-create-database
 ```
+
+Manual schema fallback:
+
+```bash
+psql -d ai_assistant_memory -f docs/postgres-schema.sql
+```
+
+### 4. Start the application
+
+```bash
 uvicorn main:app --reload
 ```
 
-Visit
+Open [http://127.0.0.1:8000](http://127.0.0.1:8000).
 
+The FastAPI lifecycle starts the MCP clients; you do not normally start every
+MCP server manually.
+
+## Environment variables
+
+| Variable | Required | Default | Purpose |
+| --- | --- | --- | --- |
+| `OPENAI_API_KEY` | Yes | — | Agent and MCP-client model calls |
+| `POSTGRES_HOST` | Yes* | `localhost` | PostgreSQL host |
+| `POSTGRES_PORT` | No | `5432` | PostgreSQL port |
+| `POSTGRES_DB` | No | `ai_assistant_memory` | PostgreSQL database |
+| `POSTGRES_USER` | Yes* | `postgres` | PostgreSQL user |
+| `POSTGRES_PASSWORD` | Usually | empty | PostgreSQL password |
+| `APP_TIMEZONE` | No | `Asia/Kolkata` | Reminders, tasks, Gmail and Calendar timezone |
+| `GMAIL_FROM_EMAIL` | No | authenticated account | Optional explicit From address; it must belong to the authenticated account |
+| `GOOGLE_CALENDAR_ID` | No | `primary` | Calendar used by the Calendar MCP server |
+| `DEEP_THOUGHT_CREDENTIALS_DIR` | No | `~/.deep-thought/credentials` | Local Google OAuth configuration/token fallback |
+| `EXPENSE_DB_PATH` | No | expense server directory | SQLite expense database |
+| `CHROMA_PATH` | No | `Databases/Chroma` | Local semantic-memory store |
+| `WHATSMEOW_SESSION_DB` | No | WhatsApp server directory | WhatsApp linked-device session |
+| `WHATSMEOW_LOG_DB` | No | WhatsApp server directory | WhatsApp message log |
+| `WORKING_CONTEXT_TTL_MINUTES` | No | `360` | Short-term tool-context lifetime |
+| `DEEP_THOUGHT_DEBUG` | No | `1` | Structured terminal diagnostics (`0` disables) |
+
+`*` Local peer authentication may not require explicit credentials.
+
+## Google Gmail and Calendar setup
+
+Each open-source user supplies their own Google Cloud OAuth project:
+
+1. Create a Google Cloud project.
+2. Enable Gmail API and Google Calendar API.
+3. Configure an External OAuth consent screen. While in Testing, add your
+   Google account as a test user.
+4. Create a **Desktop app** OAuth client and download its JSON.
+5. In Deep Thought, open **Settings**, select **Add OAuth JSON**, then connect.
+
+Gmail and Calendar share one local authorization. Tokens are stored in the OS
+keyring when possible, with a permission-restricted local fallback. See
+[Google OAuth setup](docs/google-oauth.md).
+
+## WhatsApp setup
+
+1. Install Go and ensure `go version` works.
+2. Start Deep Thought and open **Settings**.
+3. Select **Connect** beside WhatsApp.
+4. On the phone, open **WhatsApp → Settings → Linked devices → Link a device**.
+5. Scan the displayed QR code.
+
+The linked session remains local and is reused across restarts. The Settings
+toggle stops sending and receiving without deleting the linked session. See
+[WhatsApp pairing](docs/whatsapp-pairing.md).
+
+## Gmail expense imports
+
+When Google is connected, the app checks recent Gmail messages for confirmed
+Indian-bank debit alerts. Imports are deduplicated by Gmail message ID and
+appear in the notification center with **Keep**, **Delete** and category
+controls. Categories are never hard-coded or applied automatically; optional
+suggestions come only from the user's previously confirmed category for the
+same merchant.
+
+OTP, refund, reversal, credit, failed and ambiguous transaction emails are
+ignored. See [Gmail transaction imports](docs/gmail-expense-imports.md).
+
+## Example requests
+
+```text
+Remind me to send the report in 30 minutes.
+Create a high-priority task to review the launch checklist tomorrow.
+Send “I will call you shortly” to Pp on WhatsApp.
+Show my unread Gmail messages.
+Schedule an email to person@example.com tomorrow at 9 AM.
+Schedule a 30-minute product meeting tomorrow at 2 PM with person@example.com.
+Add ₹450 spent on food today.
+Show my monthly spending by category.
+What do I have due today?
 ```
-http://127.0.0.1:8000
+
+## Debugging
+
+Structured logs are emitted to stderr, which keeps MCP stdout JSON-RPC safe:
+
+```text
+[DEBUG][AGENT] ... route ...
+[DEBUG][TOOL] ... call ...
+[DEBUG][DB] ... query ...
+[DEBUG][API] ... response ...
 ```
 
----
+Sensitive tokens, passwords, prompts and message bodies are masked. See
+[debug logging](docs/debug-logging.md).
 
-# Example Queries
+FastAPI's interactive endpoint reference is available at
+[http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs) while the application
+is running.
 
+## Troubleshooting
+
+### PostgreSQL connection fails
+
+Confirm PostgreSQL is running and that `POSTGRES_HOST`, `POSTGRES_PORT`,
+`POSTGRES_DB`, `POSTGRES_USER` and `POSTGRES_PASSWORD` match a working `psql`
+connection. Apply `docs/postgres-schema.sql` to the configured database.
+You can also rerun `python scripts/setup.py` for a consolidated diagnostic.
+
+### Google says the app is not available
+
+While the OAuth consent screen is in Testing, add the signing-in account as a
+test user. Confirm both Gmail API and Google Calendar API are enabled and that
+the uploaded JSON is a **Desktop app** OAuth client.
+
+### WhatsApp QR does not appear
+
+Run `go version`, confirm the machine can reach WhatsApp, and inspect
+`[DEBUG][TOOL]` service-start logs. Remove a linked device from the phone only
+when intentionally pairing again; do not delete session databases casually.
+
+### An MCP process reports `BrokenPipeError`
+
+A broken pipe commonly means the parent app stopped or restarted while a child
+MCP process was writing a response. Restart FastAPI and inspect the earlier
+terminal lines for the original tool/startup error.
+
+### An integration is unavailable
+
+The core UI can start while an optional MCP integration fails. Check the
+Settings connection state and terminal debug logs, then verify that integration's
+runtime, credentials and network access.
+
+## Testing
+
+Run syntax and focused parser checks:
+
+```bash
+python -m pip install -r requirements-dev.txt
+python -m py_compile main.py api/routes.py graph.py
+python -m pytest -q
 ```
-Remember that I like Python.
 
-What is my favorite language?
+Some external integration tests require PostgreSQL, Google OAuth, network
+access or a linked WhatsApp account. Do not run them against production data.
 
-Add ₹200 shopping expense.
+## Security and privacy
 
-How much did I spend this week?
+- Run the development server on localhost; the current UI/API is not hardened
+  for public internet exposure.
+- Use a dedicated PostgreSQL role with access only to this database.
+- OAuth credentials, refresh tokens, WhatsApp sessions and local SQLite files
+  must remain untracked.
+- Review Gmail and Calendar OAuth scopes before authorization.
+- Back up local data before changing integrations or schemas.
+- Report vulnerabilities according to [SECURITY.md](SECURITY.md).
 
-Summarize my uploaded documents.
+## Contributing
 
-Continue working on my AI Assistant project.
-```
+Bug fixes, integrations, parser samples and documentation improvements are
+welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request.
 
----
+## License
 
-# Future Roadmap
-
-The assistant is designed around MCP, making it easy to integrate new capabilities without modifying the Planner.
-
-## Productivity
-
-- Gmail
-- Google Calendar
-- Google Drive
-- Google Docs
-- Google Sheets
-- Notion
-- Slack
-- Discord
-
----
-
-## Communication
-
-- WhatsApp
-- Telegram
-- Signal
-- SMS
-- Phone Calls
-- Microsoft Teams
-
----
-
-## Development
-
-- GitHub
-- GitLab
-- Docker
-- Kubernetes
-- Jira
-- Linear
-- VS Code
-
----
-
-## Finance
-
-- Bank Statements
-- UPI Transactions
-- Investments
-- Budget Planning
-- Monthly Reports
-- Auto Expense Categorization
-
----
-
-## Personal Assistant
-
-- Daily Briefing
-- Morning Routine
-- Smart Notifications
-- Shopping Lists
-- Medicine Reminders
-- Habit Tracking
-- Goal Tracking
-
----
-
-## AI Capabilities
-
-- Autonomous Research
-- Document Understanding
-- Code Generation
-- Report Generation
-- Meeting Summaries
-- Voice Conversations
-- Multi-modal Understanding
-
----
-
-# Towards a Truly Hands-Free AI Assistant
-
-The long-term goal is to transform this project from a conversational assistant into a fully autonomous personal operating system.
-
-Instead of waiting for instructions, the assistant should proactively understand context, monitor connected services, remember long-term information, and take actions on behalf of the user.
-
-Imagine interactions such as:
-
-- "Read my unread Gmail messages and summarize only the important ones."
-- "Reply politely to emails requesting project updates."
-- "If my manager messages me on WhatsApp during office hours, notify me immediately."
-- "Schedule meetings automatically by checking everyone's availability."
-- "Track my spending from UPI notifications without manual entry."
-- "Generate a daily briefing every morning with weather, calendar, unread emails, pending GitHub PRs, and high-priority tasks."
-- "Monitor my repositories and notify me if CI/CD pipelines fail."
-- "Listen for voice commands and execute actions hands-free."
-- "Maintain context across conversations, remembering preferences, ongoing projects, and past decisions."
-
-By combining **long-term memory**, **reasoning agents**, **MCP-based tool execution**, and **voice interaction**, the assistant evolves into a proactive digital companion that can reason, act, and continuously assist with minimal user intervention.
-
----
-
-# Contributing
-
-Contributions are welcome.
-
-Ideas include
-
-- New MCP Servers
-- Memory Improvements
-- Planner Enhancements
-- UI Improvements
-- Voice Integration
-- New Connectors
-- Testing
-- Documentation
-
----
-
-# License
-
-MIT License
+No root project license has been selected yet. Before publishing the repository
+as open source, add a `LICENSE` file and replace this section with the chosen
+license name. Without a license, others do not automatically receive permission
+to use, modify or redistribute the project.

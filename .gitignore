@@ -11,6 +11,9 @@ venv/
 # Environment files
 .env
 **/.env
+client_secret*.json
+token.json
+**/token.json
 
 # Databases
 Databases/
@@ -20,6 +23,11 @@ Databases/**
 chroma.sqlite3
 *.sqlite3
 *.db
+*.db-shm
+*.db-wal
+*.sqlite-shm
+*.sqlite-wal
+data/
 mcp_servers/whatsappmeow/integration-state.json
 mcp_servers/gmail/token.json
 mcp_servers/gmail/client_secret*.json
@@ -28,6 +36,7 @@ mcp_servers/calendar/client_secret*.json
 
 # macOS
 .DS_Store
+**/.DS_Store
 
 # VS Code
 .vscode/

@@ -1,22 +1,24 @@
+import os
 import re
 
 import psycopg
 from psycopg.rows import dict_row
+from dotenv import load_dotenv
+from debug_log import postgres_connection
+
+load_dotenv()
 
 DB_CONFIG = {
-    "host": "localhost",
-    "dbname": "ai_assistant_memory",
-    "user": "postgres",
-    "password": "mayur",
-    "port": 5432,
+    "host": os.getenv("POSTGRES_HOST", "localhost"),
+    "dbname": os.getenv("POSTGRES_DB", "ai_assistant_memory"),
+    "user": os.getenv("POSTGRES_USER", "postgres"),
+    "password": os.getenv("POSTGRES_PASSWORD", ""),
+    "port": int(os.getenv("POSTGRES_PORT", "5432")),
 }
 
 
 def get_connection():
-    return psycopg.connect(
-        **DB_CONFIG,
-        row_factory=dict_row,
-    )
+    return postgres_connection(DB_CONFIG, row_factory=dict_row)
 
 
 def fetch_records(search_results):

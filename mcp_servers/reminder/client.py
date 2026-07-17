@@ -17,6 +17,7 @@ from mcp import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
 from openai import AsyncOpenAI
 from working_context import ToolExecutionResult, build_tool_event
+from debug_log import debug
 
 load_dotenv()
 
@@ -74,6 +75,7 @@ class ReminderMCPClient:
                 await stack.aclose()
 
     async def _call_tool(self, name: str, arguments: dict[str, Any]) -> tuple[str, bool]:
+        debug("TOOL", "call", integration="reminder", tool=name, parameters=arguments)
         await self.start()
         assert self._session is not None
         async with self._call_lock:
@@ -83,7 +85,9 @@ class ReminderMCPClient:
             for item in result.content
             if getattr(item, "type", None) == "text"
         )
-        return text, bool(getattr(result, "isError", False))
+        is_error = bool(getattr(result, "isError", False))
+        debug("TOOL", "result", integration="reminder", tool=name, is_error=is_error, output_chars=len(text))
+        return text, is_error
 
     async def due_reminders(self, user_id: str, limit: int = 50) -> dict[str, Any]:
         text, is_error = await self._call_tool(
