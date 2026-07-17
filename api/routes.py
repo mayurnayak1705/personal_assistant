@@ -614,6 +614,15 @@ async def update_whatsapp_state(request: WhatsAppToggleRequest):
         ) from exc
 
 
+@router.post("/whatsapp/disconnect")
+async def disconnect_whatsapp():
+    """Unlink the local companion device from WhatsApp."""
+    try:
+        return await whatsapp_client.disconnect()
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
 @router.post("/whatsapp/pairing/start")
 async def start_whatsapp_pairing():
     """Start first-time WhatsApp linking and QR generation."""

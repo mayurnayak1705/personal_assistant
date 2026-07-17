@@ -50,6 +50,7 @@ const whatsappToggle = document.getElementById("whatsappToggle");
 const whatsappToggleDescription = document.getElementById("whatsappToggleDescription");
 const whatsappIntegrationStatus = document.getElementById("whatsappIntegrationStatus");
 const whatsappConnectBtn = document.getElementById("whatsappConnectBtn");
+const whatsappDisconnectBtn = document.getElementById("whatsappDisconnectBtn");
 const whatsappPairingModal = document.getElementById("whatsappPairingModal");
 const whatsappPairingClose = document.getElementById("whatsappPairingClose");
 const whatsappPairingCancel = document.getElementById("whatsappPairingCancel");
@@ -812,6 +813,7 @@ function setWhatsAppStatus({enabled, connected, paired, pairing_status, error = 
         whatsappPaired && Boolean(error)
     );
     whatsappConnectBtn.classList.toggle("hidden", whatsappPaired);
+    whatsappDisconnectBtn.classList.toggle("hidden", !whatsappPaired);
     whatsappToggle.classList.toggle("hidden", !whatsappPaired);
     whatsappToggle.setAttribute("aria-checked", String(whatsappEnabled));
     whatsappToggle.setAttribute(
@@ -871,6 +873,34 @@ whatsappToggle.addEventListener("click", async () => {
         whatsappToggleDescription.textContent = err.message || "Could not update WhatsApp.";
     }finally{
         whatsappToggleBusy = false;
+        whatsappToggle.disabled = false;
+    }
+});
+
+whatsappDisconnectBtn.addEventListener("click", async () => {
+    if(whatsappToggleBusy || !whatsappPaired) return;
+    const confirmed = window.confirm(
+        "Disconnect WhatsApp? This unlinks this device and removes its local session. You will need to scan a new QR code to reconnect."
+    );
+    if(!confirmed) return;
+
+    whatsappToggleBusy = true;
+    whatsappDisconnectBtn.disabled = true;
+    whatsappToggle.disabled = true;
+    whatsappToggleDescription.textContent = "Disconnecting and removing the local WhatsApp session…";
+    try{
+        const response = await fetch("/api/whatsapp/disconnect", {method:"POST"});
+        const payload = await response.json();
+        if(!response.ok) throw new Error(payload.detail || "Could not disconnect WhatsApp");
+        clearReplyTarget();
+        sessionStorage.removeItem(WHATSAPP_CURSOR_KEY);
+        setWhatsAppStatus(payload);
+        showNotice("WhatsApp disconnected. Scan a QR code to reconnect.", "💬", 5200);
+    }catch(err){
+        whatsappToggleDescription.textContent = err.message || "Could not disconnect WhatsApp.";
+    }finally{
+        whatsappToggleBusy = false;
+        whatsappDisconnectBtn.disabled = false;
         whatsappToggle.disabled = false;
     }
 });

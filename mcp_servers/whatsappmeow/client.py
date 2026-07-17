@@ -13,7 +13,6 @@ import os
 import re
 import sqlite3
 import time
-from contextlib import AsyncExitStack
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -32,10 +31,11 @@ class WhatsAppMCPClient:
         self.model = model
         self.server_dir = Path(__file__).resolve().parent
         self._openai = AsyncOpenAI()
-        self._stack: AsyncExitStack | None = None
         self._session: ClientSession | None = None
         self._start_lock = asyncio.Lock()
-        self._call_lock = asyncio.Lock()
+        self._runner_task: asyncio.Task[None] | None = None
+        self._runner_queue: asyncio.Queue | None = None
+        self._runner_ready: asyncio.Future[None] | None = None
         self._last_start_attempt = 0.0
         self._start_error: str | None = None
         self._state_path = self.server_dir / "integration-state.json"
@@ -231,11 +231,55 @@ class WhatsAppMCPClient:
         if enabled and self.paired:
             await self.start()
         else:
-            # Wait for any in-flight send/poll to finish before disconnecting.
-            async with self._call_lock:
-                await self.stop()
+            await self.stop()
             self.contact_map.clear()
             self._start_error = None
+        return self.status
+
+    async def disconnect(self) -> dict[str, Any]:
+        """Unlink the companion device and remove its local auth session.
+
+        Unlike the on/off switch, this calls WhatsApp's logout endpoint. The
+        session is only cleared after WhatsApp confirms the unlink, so a
+        transient network failure never falsely reports a disconnected device.
+        """
+        await self.cancel_pairing()
+        was_enabled = self._enabled
+
+        if not self.paired:
+            await self.stop()
+            self._enabled = False
+            self._persist_enabled_state()
+            self.pending_sends.clear()
+            self.contact_map.clear()
+            self._start_error = None
+            return self.status
+
+        # A linked account may have been switched off. Temporarily allow the
+        # MCP owner to reconnect solely to submit the explicit logout request;
+        # do not persist that temporary state.
+        self._enabled = True
+        try:
+            text, is_error = await self._call_tool("disconnect_whatsapp", {})
+            if is_error:
+                raise RuntimeError(text)
+        except Exception:
+            self._enabled = was_enabled
+            raise
+        finally:
+            await self.stop()
+
+        self._enabled = False
+        self._persist_enabled_state()
+        self.pending_sends.clear()
+        self.contact_map.clear()
+        self._start_error = None
+        self._pair_state = {
+            "status": "idle",
+            "qr_image": None,
+            "message": None,
+        }
+        debug("TOOL", "disconnected", integration="whatsapp")
         return self.status
 
     async def start(self) -> None:
@@ -243,11 +287,16 @@ class WhatsAppMCPClient:
             raise RuntimeError("WhatsApp integration is turned off.")
         if not self.paired:
             raise RuntimeError("WhatsApp is not linked. Connect it from Settings and scan the QR code.")
-        if self._session is not None:
+        if self.connected:
             return
 
         async with self._start_lock:
-            if self._session is not None:
+            if self.connected:
+                return
+            if self._runner_task is not None and not self._runner_task.done():
+                ready = self._runner_ready
+                if ready is not None:
+                    await asyncio.shield(ready)
                 return
             # Avoid spawning a Go process on every two-second UI poll when the
             # account is unpaired or temporarily offline.
@@ -273,40 +322,113 @@ class WhatsAppMCPClient:
                 env=env,
             )
 
-            stack = AsyncExitStack()
+            queue: asyncio.Queue = asyncio.Queue()
+            ready = asyncio.get_running_loop().create_future()
+            self._runner_queue = queue
+            self._runner_ready = ready
+            self._runner_task = asyncio.create_task(
+                self._run_mcp_owner(params, queue, ready),
+                name="whatsapp-mcp-owner",
+            )
             try:
-                read_stream, write_stream = await stack.enter_async_context(
-                    stdio_client(params)
-                )
-                session = await stack.enter_async_context(
-                    ClientSession(read_stream, write_stream)
-                )
-                await session.initialize()
-            except Exception as exc:
-                await stack.aclose()
-                self._start_error = f"WhatsApp MCP is unavailable: {exc}"
-                raise RuntimeError(self._start_error) from exc
+                await asyncio.shield(ready)
+            except Exception:
+                task = self._runner_task
+                if task is not None:
+                    await asyncio.gather(task, return_exceptions=True)
+                raise
 
-            self._stack = stack
-            self._session = session
-            self._start_error = None
+    async def _run_mcp_owner(
+        self,
+        params: StdioServerParameters,
+        queue: asyncio.Queue,
+        ready: asyncio.Future[None],
+    ) -> None:
+        """Own the MCP cancel scopes and execute every call in this one task."""
+        try:
+            async with stdio_client(params) as (read_stream, write_stream):
+                async with ClientSession(read_stream, write_stream) as session:
+                    await session.initialize()
+                    self._session = session
+                    self._start_error = None
+                    if not ready.done():
+                        ready.set_result(None)
+
+                    while True:
+                        request = await queue.get()
+                        if request is None:
+                            break
+                        name, arguments, future = request
+                        if future.cancelled():
+                            continue
+                        try:
+                            if name == "__list_tools__":
+                                result = await session.list_tools()
+                            else:
+                                result = await session.call_tool(name, arguments)
+                        except Exception as exc:
+                            if not future.done():
+                                future.set_exception(exc)
+                        else:
+                            if not future.done():
+                                future.set_result(result)
+        except asyncio.CancelledError:
+            if not ready.done():
+                ready.cancel()
+            raise
+        except Exception as exc:
+            message = f"WhatsApp MCP is unavailable: {exc}"
+            self._start_error = message
+            if not ready.done():
+                ready.set_exception(RuntimeError(message))
+            debug("TOOL", "service_stopped", integration="whatsapp", error=message)
+        finally:
+            self._session = None
+            failure = RuntimeError(self._start_error or "WhatsApp MCP stopped.")
+            while True:
+                try:
+                    pending = queue.get_nowait()
+                except asyncio.QueueEmpty:
+                    break
+                if pending is not None:
+                    future = pending[2]
+                    if not future.done():
+                        future.set_exception(failure)
 
     async def stop(self) -> None:
         await self.cancel_pairing()
         async with self._start_lock:
-            stack, self._stack = self._stack, None
+            task = self._runner_task
+            queue = self._runner_queue
+            if task is None:
+                self._session = None
+                return
+            if not task.done() and queue is not None:
+                await queue.put(None)
+        if task is not None:
+            try:
+                await asyncio.wait_for(asyncio.shield(task), timeout=10)
+            except asyncio.TimeoutError:
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+        async with self._start_lock:
+            if self._runner_task is task:
+                self._runner_task = None
+                self._runner_queue = None
+                self._runner_ready = None
             self._session = None
-            if stack is not None:
-                await stack.aclose()
 
     async def _call_tool(self, name: str, arguments: dict[str, Any]) -> tuple[str, bool]:
         if not self.enabled:
             raise RuntimeError("WhatsApp integration is turned off. Turn it on before sending or receiving messages.")
         debug("TOOL", "call", integration="whatsapp", tool=name, parameters=arguments)
         await self.start()
-        assert self._session is not None
-        async with self._call_lock:
-            result = await self._session.call_tool(name, arguments)
+        queue = self._runner_queue
+        if queue is None or not self.connected:
+            raise RuntimeError(self._start_error or "WhatsApp MCP is not connected.")
+        future = asyncio.get_running_loop().create_future()
+        await queue.put((name, arguments, future))
+        result = await future
         text = "\n".join(
             str(item.text)
             for item in result.content
@@ -315,6 +437,16 @@ class WhatsAppMCPClient:
         is_error = bool(getattr(result, "isError", False))
         debug("TOOL", "result", integration="whatsapp", tool=name, is_error=is_error, output_chars=len(text))
         return text, is_error
+
+    async def _list_tools(self) -> Any:
+        """List MCP tools through the owner task that owns the stdio session."""
+        await self.start()
+        queue = self._runner_queue
+        if queue is None or not self.connected:
+            raise RuntimeError(self._start_error or "WhatsApp MCP is not connected.")
+        future = asyncio.get_running_loop().create_future()
+        await queue.put(("__list_tools__", {}, future))
+        return await future
 
     async def list_contacts(self, query: str = "") -> dict[str, Any]:
         text, is_error = await self._call_tool("list_contacts", {"query": query})
@@ -480,15 +612,13 @@ class WhatsAppMCPClient:
     ) -> ToolExecutionResult:
         """Let the planner use MCP tools, with contact safety enforced in code."""
         await self.start()
-        assert self._session is not None
 
         events: list[dict[str, Any]] = []
         pending_result = await self._continue_pending_send(conversation_id, user_input, events)
         if pending_result is not None:
             return ToolExecutionResult(text=pending_result, events=events)
 
-        async with self._call_lock:
-            listed = await self._session.list_tools()
+        listed = await self._list_tools()
         tools = [
             {
                 "type": "function",

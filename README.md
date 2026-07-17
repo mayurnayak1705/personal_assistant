@@ -211,8 +211,9 @@ keyring when possible, with a permission-restricted local fallback. See
 5. Scan the displayed QR code.
 
 The linked session remains local and is reused across restarts. The Settings
-toggle stops sending and receiving without deleting the linked session. See
-[WhatsApp pairing](docs/whatsapp-pairing.md).
+toggle only stops sending and receiving; **Disconnect** securely unlinks the
+device and removes its local authentication session, so a new QR scan is
+required to reconnect. See [WhatsApp pairing](docs/whatsapp-pairing.md).
 
 ## Gmail expense imports
 
@@ -320,9 +321,22 @@ access or a linked WhatsApp account. Do not run them against production data.
 Bug fixes, integrations, parser samples and documentation improvements are
 welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request.
 
+## Acknowledgements
+
+Deep Thought uses or adapts work from these open-source projects:
+
+- [tulir/whatsmeow](https://github.com/tulir/whatsmeow) — the Go WhatsApp
+  client foundation used by the WhatsApp MCP integration.
+- [GenAIwithMS/Expense-tracker-MCP](https://github.com/GenAIwithMS/Expense-tracker-MCP)
+  — the foundation used for the Expense Tracker MCP integration.
+
+Thank you to their maintainers and contributors. Their respective upstream
+licenses and attribution requirements continue to apply to reused or adapted
+components; review and preserve the relevant license notices when distributing
+this project.
+
 ## License
 
-No root project license has been selected yet. Before publishing the repository
-as open source, add a `LICENSE` file and replace this section with the chosen
-license name. Without a license, others do not automatically receive permission
-to use, modify or redistribute the project.
+Deep Thought's original source code is available under the [MIT License](LICENSE).
+Bundled or adapted third-party components retain their own licenses; see
+[Third-party notices](THIRD_PARTY_NOTICES.md).

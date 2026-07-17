@@ -4,12 +4,10 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"image/png"
 	"os"
 
 	_ "modernc.org/sqlite"
@@ -42,12 +40,8 @@ func qrDataURL(value string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	code.Scale = 7
-	var output bytes.Buffer
-	if err := png.Encode(&output, code.Image()); err != nil {
-		return "", err
-	}
-	return "data:image/png;base64," + base64.StdEncoding.EncodeToString(output.Bytes()), nil
+	code.Scale = 8
+	return "data:image/png;base64," + base64.StdEncoding.EncodeToString(code.PNG()), nil
 }
 
 func main() {

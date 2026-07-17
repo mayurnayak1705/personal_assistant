@@ -8,26 +8,31 @@ attendees.
 ## Google Cloud and OAuth setup
 
 1. In a Google Cloud project, enable the **Google Calendar API**.
-2. Configure the OAuth consent screen and add your Google account as a test user
-   while the app is in testing mode.
-3. Create an OAuth client with application type **Desktop app** and download its
+2. Also enable the **Gmail API** because Deep Thought uses one shared Google
+   authorization for both integrations.
+3. Configure the OAuth consent screen and add your Google account as a test
+   user while the app is in testing mode.
+4. Create an OAuth client with application type **Desktop app** and download its
    JSON file.
-4. From the repository root, run:
+5. Start Deep Thought, open **Settings**, then select **Add OAuth JSON** beside
+   Gmail or Google Calendar.
+6. Select the downloaded Desktop OAuth JSON and choose **Connect**.
+7. Complete Google sign-in and approve the Gmail and Calendar permissions.
 
-```bash
-.venv/bin/python -m mcp_servers.calendar.setup_oauth /path/to/client_secret.json
-```
+The browser consent flow requests `gmail.modify` and `calendar.events`. Gmail
+and Calendar intentionally share this one authorization, so connecting either
+card enables both integrations. The OAuth JSON is validated before saving.
+Refresh tokens are stored in the operating-system keyring when available, with
+a mode-`0600` local-file fallback under `~/.deep-thought/credentials` (or
+`DEEP_THOUGHT_CREDENTIALS_DIR`). They are never stored in the repository.
 
-The browser consent flow requests the narrow `calendar.events` scope. The saved
-refresh token is written to `mcp_servers/calendar/token.json`, mode `0600`, and
-is ignored by Git. Calendar and Gmail intentionally use separate token files.
+For the full open-source setup flow, see [Google OAuth](google-oauth.md).
 
 Optional environment variables:
 
 ```dotenv
 APP_TIMEZONE=Asia/Kolkata
 GOOGLE_CALENDAR_ID=primary
-CALENDAR_TOKEN_FILE=/custom/path/calendar-token.json
 ```
 
 Restart the FastAPI application after authorization. Verify the connection at

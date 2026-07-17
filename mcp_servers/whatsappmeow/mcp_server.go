@@ -431,6 +431,13 @@ func tools() []toolDef {
 				},
 			},
 		},
+		{
+			Name:        "disconnect_whatsapp",
+			Description: "Unlink this companion device from WhatsApp and delete its local authentication session. A new QR scan is required before WhatsApp can be used again.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+			},
+		},
 	}
 }
 
@@ -679,6 +686,12 @@ func main() {
 				"cursor":   cursor,
 				"messages": out,
 			})
+
+		case "disconnect_whatsapp":
+			if err := client.Logout(ctx); err != nil {
+				return toolResult(fmt.Sprintf("failed to unlink WhatsApp: %v", err), true)
+			}
+			return toolResult("WhatsApp device unlinked and local session removed.", false)
 
 		default:
 			return toolResult(fmt.Sprintf("unknown tool: %s", name), true)

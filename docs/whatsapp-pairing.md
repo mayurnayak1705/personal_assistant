@@ -19,6 +19,13 @@ after the linked device is removed from WhatsApp.
 The WhatsApp switch controls sending and receiving without deleting the linked
 session. Turning it back on reconnects the same account.
 
+To remove the connection entirely, select **Disconnect** on the WhatsApp card
+and confirm the prompt. Deep Thought asks WhatsApp to unlink the companion
+device, then removes the local authentication session. The local message log
+is retained, but sending or receiving requires a fresh QR scan. If WhatsApp
+cannot confirm the unlink (for example, while offline), the session is kept and
+the app reports the failure rather than claiming the device was disconnected.
+
 ## Runtime requirements
 
 - Go must be installed and available as `go`.
