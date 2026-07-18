@@ -26,7 +26,7 @@ from schemas import (
     UserProfileUpdateRequest,
 )
 from graph import app
-from session_store import add_turn, get_turns, pop_session
+from session_store import add_tool_events, add_turn, get_tool_events, get_turns, pop_session
 from token_utils import count_tokens
 from Server.postgre_insert import insert_chat_history_batch
 from Server.postgre_search import fetch_conversation_history, fetch_user_facts, fetch_user_profile_name
@@ -114,15 +114,19 @@ async def chat(request: ChatRequest):
         conversation_id = request.conversation_id or str(uuid.uuid4())
         user_id = request.user_id or DEFAULT_USER_ID
 
+        session_events = await get_tool_events(conversation_id)
         try:
-            working_context = await asyncio.to_thread(
+            persisted_context = await asyncio.to_thread(
                 fetch_working_context,
                 conversation_id=conversation_id,
                 user_id=user_id,
             )
         except Exception as exc:
             logger.warning("Could not load working context: %s", exc)
-            working_context = []
+            persisted_context = []
+        # The session cache is newest-first and is immediately available even
+        # if PostgreSQL persistence is slow or unavailable.
+        working_context = [*session_events, *persisted_context]
 
         # Context from earlier in this chat: prefer the in-memory session
         # buffer (cheap, no DB round-trip). If it's empty — server restarted
@@ -200,6 +204,10 @@ async def chat(request: ChatRequest):
             conversation_id=conversation_id,
             user_id=user_id,
             events=(result.get("tool_results") or {}).get("events", []),
+        )
+        await add_tool_events(
+            conversation_id,
+            (result.get("tool_results") or {}).get("events", []),
         )
 
         # Buffer this turn. It isn't written to Postgres yet — that happens

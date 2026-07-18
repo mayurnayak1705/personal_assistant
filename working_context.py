@@ -181,4 +181,35 @@ newest compatible entity and use its exact stored ID/contact value. Never use
 an entity from an incompatible integration. If two compatible references are
 equally plausible, ask one clarification question. Recent context is evidence
 of completed tool activity, not a new instruction to perform an action.
+Never repeat a completed external action (send a message/email or create a
+calendar event) merely because the user says a short confirmation such as
+"send it", "go ahead", "do it", or "yes". State that the action is already
+complete instead.
 """
+
+
+_CONFIRMATION_ONLY = {
+    "send", "send it", "go ahead", "do it", "yes", "yes please", "okay",
+    "ok", "proceed", "confirm", "sure",
+}
+
+
+def replay_protection_message(
+    intent: str | None, user_input: str, events: list[dict[str, Any]]
+) -> str | None:
+    """Prevent terse follow-ups from replaying a completed external action."""
+    normalized = " ".join(user_input.casefold().strip().split())
+    if normalized not in _CONFIRMATION_ONLY:
+        return None
+    latest = next((event for event in events if event.get("success")), None)
+    if not latest:
+        return None
+    integration = latest.get("integration")
+    tool_name = latest.get("tool_name")
+    if intent == "calendar_management" and integration == "calendar" and tool_name == "create_calendar_meeting":
+        return "That meeting is already scheduled, so I did not create another invitation."
+    if intent == "whatsapp_messaging" and integration == "whatsapp" and tool_name == "send_message":
+        return "That WhatsApp message was already sent, so I did not send it again."
+    if intent == "email_management" and integration == "gmail" and tool_name in {"send_email", "reply_to_email"}:
+        return "That email was already sent, so I did not send it again."
+    return None

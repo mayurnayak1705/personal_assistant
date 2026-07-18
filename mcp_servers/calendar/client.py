@@ -134,6 +134,7 @@ class CalendarMCPClient:
         user_input: str,
         system_prompt: str,
         messages: Iterable[Any] = (),
+        recent_events: Iterable[dict[str, Any]] = (),
     ) -> ToolExecutionResult:
         await self.start()
         assert self._session is not None
@@ -175,6 +176,11 @@ class CalendarMCPClient:
             outputs = []
             for call in calls:
                 arguments = json.loads(call.arguments or "{}")
+                if call.name == "create_calendar_meeting" and self._already_created(arguments, recent_events):
+                    return ToolExecutionResult(
+                        text="An identical meeting was already scheduled in this conversation, so I did not send another invitation.",
+                        events=events,
+                    )
                 result, is_error = await self._call_tool(call.name, arguments)
                 events.append(build_tool_event(
                     integration="calendar",
@@ -199,6 +205,33 @@ class CalendarMCPClient:
             text="I could not complete the Calendar request after several tool steps.",
             events=events,
         )
+
+    @staticmethod
+    def _already_created(arguments: dict[str, Any], events: Iterable[dict[str, Any]]) -> bool:
+        """Match a meeting against successful creates in the current context."""
+        def normalized(value: Any) -> str:
+            return " ".join(str(value or "").casefold().split())
+
+        title = normalized(arguments.get("title"))
+        start_time = normalized(arguments.get("start_time"))
+        attendees = sorted(normalized(value) for value in arguments.get("attendees", []) if value)
+        if not title or not start_time or not attendees:
+            return False
+        for event in events:
+            if not (
+                event.get("success")
+                and event.get("integration") == "calendar"
+                and event.get("tool_name") == "create_calendar_meeting"
+            ):
+                continue
+            previous = event.get("arguments") or {}
+            if (
+                normalized(previous.get("title")) == title
+                and normalized(previous.get("start_time")) == start_time
+                and sorted(normalized(value) for value in previous.get("attendees", []) if value) == attendees
+            ):
+                return True
+        return False
 
 
 calendar_client = CalendarMCPClient()

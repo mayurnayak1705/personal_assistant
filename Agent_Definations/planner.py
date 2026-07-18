@@ -12,7 +12,7 @@ from mcp_servers.gmail.client import gmail_client
 from mcp_servers.calendar.client import calendar_client
 from daily_briefing import generate_daily_briefing
 from daily_briefing_store import set_daily_briefing_preference
-from working_context import ToolExecutionResult, build_tool_event, context_instructions
+from working_context import ToolExecutionResult, build_tool_event, context_instructions, replay_protection_message
 from debug_log import debug
 from user_profile_store import DEFAULT_USER_ID
 
@@ -147,6 +147,22 @@ async def planner_node(state: GraphState):
     debug("AGENT", "start", agent="planner", intent=intent,
           conversation_id=state.get("conversation_id"), user_id=state.get("user_id"))
     recent_context = context_instructions(state.get("working_context", []))
+    replay_message = replay_protection_message(
+        intent, state.get("user_input", ""), state.get("working_context", [])
+    )
+    if replay_message:
+        return {
+            "planner_result": {"status": "success", "intent": intent, "result": replay_message},
+            "execution_plan": [{
+                "id": 1,
+                "description": "Prevent replay of a completed external action",
+                "tool": "replay_protection",
+                "inputs": {"request": state.get("user_input", "")},
+                "status": "completed",
+            }],
+            "current_step": 1,
+            "tool_results": {"events": []},
+        }
     if intent == "whatsapp_messaging":
         try:
             result = await whatsapp_client.execute(
@@ -201,6 +217,7 @@ async def planner_node(state: GraphState):
                 user_input=state["user_input"],
                 system_prompt=CALENDAR_SYSTEM_PROMPT + recent_context,
                 messages=state.get("messages", []),
+                recent_events=state.get("working_context", []),
             )
         except Exception as exc:
             result = f"Google Calendar is currently unavailable: {exc}"

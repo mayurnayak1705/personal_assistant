@@ -32,6 +32,7 @@ class ChatTurn(TypedDict):
 
 
 _sessions: dict[str, list[ChatTurn]] = {}
+_tool_events: dict[str, list[dict]] = {}
 _lock = asyncio.Lock()
 
 
@@ -50,7 +51,30 @@ async def get_turns(conversation_id: str) -> list[ChatTurn]:
         return list(_sessions.get(conversation_id, []))
 
 
+async def add_tool_events(conversation_id: str, events: list[dict]) -> None:
+    """Keep completed actions available for the active conversation immediately.
+
+    This is deliberately in-process: a slow or unavailable database must not
+    make a just-completed send/create action invisible on the next turn.
+    """
+    if not events:
+        return
+    async with _lock:
+        stored = _tool_events.setdefault(conversation_id, [])
+        stored.extend(events)
+        # Enough history for references and replay protection, without letting
+        # a long-running chat grow without bound.
+        del stored[:-50]
+
+
+async def get_tool_events(conversation_id: str) -> list[dict]:
+    """Return newest-first tool actions for short-term reference resolution."""
+    async with _lock:
+        return list(reversed(_tool_events.get(conversation_id, [])))
+
+
 async def pop_session(conversation_id: str) -> list[ChatTurn]:
     """Removes and returns all buffered turns for a conversation. Used when flushing to Postgres."""
     async with _lock:
+        _tool_events.pop(conversation_id, None)
         return _sessions.pop(conversation_id, [])
