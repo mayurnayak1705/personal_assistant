@@ -945,3 +945,154 @@ code{font-family:'SF Mono',Consolas,monospace;font-size:.88em}
   .statusbar{flex-wrap:wrap;padding:12px 0 16px}
   .pill-muted{display:none}
 }
+
+/* ========================================================================
+   Deep Thought workspace redesign
+   The rules below intentionally refine the existing functional components.
+   ======================================================================== */
+:root{
+  --bg:#0d0d10;
+  --bg-elev:#101116;
+  --text:#f3f4f6;
+  --card:#16171b;
+  --card-2:#1d1f24;
+  --grid-line:rgba(255,255,255,.035);
+  --shadow-soft:0 4px 20px rgba(0,0,0,.28);
+  --shadow-lift:0 12px 36px rgba(0,0,0,.35);
+  --ease-out:cubic-bezier(.16,1,.3,1);
+}
+:root[data-theme="light"]{
+  --bg:#f6f7fb;
+  --bg-elev:#fff;
+  --text:#0f1420;
+  --card:#fff;
+  --card-2:#f2f4f9;
+  --grid-line:rgba(10,14,25,.045);
+  --shadow-soft:0 6px 24px rgba(20,28,50,.08);
+  --shadow-lift:0 18px 48px rgba(20,28,50,.12);
+}
+.mono{font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace}
+
+/* Loading reveal */
+.curtain{
+  position:fixed;inset:0;z-index:9999;background:var(--bg);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:24px;
+  transition:opacity .8s var(--ease),transform .9s var(--ease);
+}
+.curtain.gone{opacity:0;pointer-events:none;transform:translateY(-6px)}
+.curtain-mark{opacity:0;animation:workspace-mark-in .8s .1s var(--ease) forwards}
+.curtain-caption{
+  display:inline-flex;align-items:center;gap:8px;color:var(--muted);
+  font:500 .72rem 'JetBrains Mono',monospace;letter-spacing:.14em;text-transform:uppercase;
+  opacity:0;animation:workspace-mark-in .8s .3s var(--ease) forwards;
+}
+.curtain-caption span{color:var(--blue);animation:workspace-spin 2s linear infinite;display:inline-block}
+.curtain-progress{width:140px;height:2px;background:var(--border);border-radius:2px;overflow:hidden;opacity:0;animation:workspace-mark-in .8s .4s var(--ease) forwards}
+.curtain-progress span{display:block;height:100%;width:0;background:var(--accent-grad);animation:workspace-progress 1.2s .5s var(--ease-out) forwards}
+@keyframes workspace-mark-in{to{opacity:1}}
+@keyframes workspace-progress{to{width:100%}}
+@keyframes workspace-spin{to{transform:rotate(360deg)}}
+
+/* Ambient grid and parallax scene */
+.grid-veil{
+  position:absolute;inset:-2px;
+  background-image:linear-gradient(var(--grid-line) 1px,transparent 1px),linear-gradient(90deg,var(--grid-line) 1px,transparent 1px);
+  background-size:56px 56px;
+  mask-image:radial-gradient(ellipse 90% 60% at 50% 40%,#000 30%,transparent 75%);
+  -webkit-mask-image:radial-gradient(ellipse 90% 60% at 50% 40%,#000 30%,transparent 75%);
+}
+.orb{animation:none;will-change:transform,opacity}
+.orb-a{width:620px;height:620px;background:radial-gradient(circle,#3b82f6,transparent 65%);top:-260px;left:-160px;margin:0;opacity:.22}
+.orb-b{width:520px;height:520px;background:radial-gradient(circle,#8b5cf6,transparent 65%);top:-120px;right:-140px;left:auto;margin:0;opacity:.20}
+.orb-c{width:460px;height:460px;background:radial-gradient(circle,#06b6d4,transparent 65%);bottom:-220px;left:40%;opacity:.10}
+:root[data-theme="light"] .orb-a,:root[data-theme="light"] .orb-b{opacity:.14}
+:root[data-theme="light"] .orb-c{opacity:.08}
+
+/* Workspace chrome */
+.app{max-width:1120px}
+.topbar{padding:22px 0 18px}
+.brand{display:inline-flex;align-items:baseline;gap:10px;color:var(--text);text-decoration:none}
+.brand-mark{transform:translateY(4px)}
+.brand-name{font-size:.98rem;letter-spacing:-.01em;background:none;-webkit-text-fill-color:currentColor}
+.brand-slash{color:var(--faint)}
+.brand-sub{font:400 .72rem 'JetBrains Mono',monospace;color:var(--muted);letter-spacing:.06em}
+.topbar-actions{gap:6px}
+.ghost-btn{width:38px;height:38px;border-radius:10px;background:transparent;border-color:transparent;backdrop-filter:none}
+.ghost-btn:hover{background:var(--glass-hover);border-color:var(--border)}
+.gmail-panel,.tasks-panel,.notification-panel,.settings-panel{
+  top:78px;right:max(24px,calc(50% - 540px));border-radius:14px;
+  background:color-mix(in oklab,var(--bg-elev) 92%,transparent);
+  box-shadow:var(--shadow-lift),inset 0 1px 0 rgba(255,255,255,.04);
+}
+
+/* Editorial welcome */
+.stage{padding-top:8px}
+.welcome{text-align:left;padding:0 8px;margin-bottom:28px}
+.hero-tag{
+  display:inline-flex;align-items:center;gap:8px;padding:5px 12px 5px 8px;border-radius:999px;
+  background:var(--glass);border:1px solid var(--border);color:var(--muted);font-size:.72rem;
+  transform:translateY(6px);opacity:0;animation:workspace-tag-in .6s .2s var(--ease-out) forwards;
+}
+.hero-dot{width:6px;height:6px;border-radius:50%;background:#22c55e;box-shadow:0 0 10px rgba(34,197,94,.8);animation:workspace-dot 2s ease-in-out infinite}
+@keyframes workspace-tag-in{to{opacity:1;transform:none}}
+@keyframes workspace-dot{50%{opacity:.55}}
+.headline{
+  margin:20px 0 0;font-size:clamp(2.2rem,5.4vw,4rem);font-weight:600;
+  letter-spacing:-.035em;line-height:1.02;text-align:left;
+}
+.headline .line{display:block;overflow:hidden;padding-bottom:.06em}
+.headline .line-inner{display:block;transform:translateY(110%);will-change:transform;transition:transform .95s var(--ease-out)}
+.headline.revealed .line-inner{transform:translateY(0)}
+.headline .line:nth-child(1) .line-inner{transition-delay:.35s}
+.headline .line:nth-child(2) .line-inner{transition-delay:.45s}
+.welcome-question{margin-top:8px;font-size:1em}
+.welcome-question .line-inner{font-size:.58em;font-weight:400;letter-spacing:-.015em;line-height:1.15;-webkit-text-fill-color:#aeb7c8;color:#aeb7c8}
+:root[data-theme="light"] .welcome-question .line-inner{-webkit-text-fill-color:#667085;color:#667085}
+.subhead{max-width:56ch;margin:22px 0 0;font-size:1rem;font-weight:400;line-height:1.6;opacity:0;transform:translateY(10px);transition:all .7s .7s var(--ease-out)}
+.subhead.in{opacity:1;transform:none}
+.chapters{list-style:none;padding:0;margin:28px 0 0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+.chapter{
+  position:relative;padding:18px;border-radius:12px;background:var(--glass);border:1px solid var(--border);
+  display:flex;flex-direction:column;gap:12px;opacity:0;transform:translateY(14px);
+  transition:all .7s var(--ease-out);
+}
+.chapter.in{opacity:1;transform:none}
+.chapter:hover{transform:translateY(-3px);border-color:var(--border-strong);background:var(--glass-hover);box-shadow:var(--shadow-soft)}
+.chapter:nth-child(1){transition-delay:.85s}.chapter:nth-child(2){transition-delay:.95s}.chapter:nth-child(3){transition-delay:1.05s}
+.chapter-num{font-size:.7rem;color:var(--muted);letter-spacing:.12em}
+.chapter h3{margin:0 0 6px;font-size:.98rem;font-weight:600;letter-spacing:-.01em}
+.chapter p{margin:0;color:var(--muted);font-size:.82rem;line-height:1.55}
+
+/* Refined conversation and composer */
+.message{margin:14px 0;animation-duration:.4s}
+.bubble{border-radius:16px}
+.user .bubble{border-bottom-right-radius:6px}
+.assistant .bubble{border-bottom-left-radius:6px;backdrop-filter:blur(12px)}
+.prompt-bar{padding:10px;border-radius:16px;background:color-mix(in oklab,var(--bg-elev) 82%,transparent);box-shadow:var(--shadow-lift),inset 0 1px 0 rgba(255,255,255,.04)}
+.tool-btn,.send-btn{width:40px;height:40px;border-radius:12px}
+.prompt-hint{font-family:'JetBrains Mono',monospace;font-size:.68rem}
+
+/* Editorial capability marquee */
+.marquee{overflow:hidden;padding:10px 0 4px;mask-image:linear-gradient(90deg,transparent,#000 8%,#000 92%,transparent);-webkit-mask-image:linear-gradient(90deg,transparent,#000 8%,#000 92%,transparent)}
+.marquee-track{display:inline-flex;align-items:center;gap:36px;white-space:nowrap;color:var(--muted);animation:workspace-marquee 55s linear infinite}
+.marquee-track span{font-size:.88rem;font-weight:500;letter-spacing:-.005em}
+.marquee-track em{color:var(--faint);font-style:normal;font-size:.62rem}
+@keyframes workspace-marquee{to{transform:translateX(-50%)}}
+.statusbar{padding:8px 0 16px}
+.pill{font-family:'JetBrains Mono',monospace;font-size:.68rem;padding:6px 12px}
+
+/* Keep the composer reachable on compact laptop viewports. */
+@media(max-height:820px) and (min-width:821px){.marquee{display:none}}
+@media(max-width:820px){
+  .chapters{grid-template-columns:1fr}.brand-slash,.brand-sub{display:none}
+  .chapter{padding:14px;gap:8px}.chapter p{display:none}
+}
+@media(max-width:640px){
+  .gmail-panel,.tasks-panel,.notification-panel,.settings-panel{top:70px;right:16px}
+  .headline{font-size:2rem}.welcome{margin-bottom:20px}.subhead{font-size:.9rem}
+  .chapters{margin-top:18px;gap:8px}.chapter{flex-direction:row;align-items:center}
+  .prompt-bar{border-radius:14px}.marquee{padding-top:6px}.marquee-track{gap:24px;animation-duration:40s}
+}
+@media(prefers-reduced-motion:reduce){
+  .headline .line-inner{transform:none!important}.subhead,.chapter{opacity:1!important;transform:none!important}
+}

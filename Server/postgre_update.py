@@ -1,18 +1,9 @@
-import os
 import psycopg
 from psycopg.rows import dict_row
-from dotenv import load_dotenv
 from debug_log import postgres_connection
+from database_config import postgres_config
 
-load_dotenv()
-
-DB_CONFIG = {
-    "host": os.getenv("POSTGRES_HOST", "localhost"),
-    "dbname": os.getenv("POSTGRES_DB", "ai_assistant_memory"),
-    "user": os.getenv("POSTGRES_USER", "postgres"),
-    "password": os.getenv("POSTGRES_PASSWORD", ""),
-    "port": int(os.getenv("POSTGRES_PORT", "5432")),
-}
+DB_CONFIG = postgres_config()
 
 
 def get_connection():

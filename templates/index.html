@@ -3,7 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Personal Assistant</title>
+    <title>Deep Thought — AI Workspace</title>
+    <meta name="description" content="A private AI workspace for memory, tasks, communication and planning.">
 
     <script>
         (() => {
@@ -20,7 +21,7 @@
 
     <!-- Google Font -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 
     <!-- Markdown -->
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
@@ -30,10 +31,21 @@
           href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
 
-    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/css/style.css?v=workspace-redesign-4">
 </head>
 
 <body>
+
+<div class="curtain" id="curtain" aria-hidden="true">
+    <div class="curtain-mark">
+        <svg viewBox="0 0 32 32" width="34" height="34" aria-hidden="true">
+            <defs><linearGradient id="curtainGrad" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#60a5fa"/><stop offset="1" stop-color="#a78bfa"/></linearGradient></defs>
+            <path d="M16 3l3.2 6.6 7.3 1-5.3 5.1 1.3 7.2L16 19.6l-6.5 3.3 1.3-7.2L5.5 10.6l7.3-1L16 3z" fill="url(#curtainGrad)"/>
+        </svg>
+    </div>
+    <div class="curtain-caption"><span>◜</span> Loading workspace</div>
+    <div class="curtain-progress"><span></span></div>
+</div>
 
 <section class="profile-setup-overlay hidden" id="profileSetupModal" role="dialog"
          aria-modal="true" aria-labelledby="profileSetupTitle">
@@ -52,8 +64,10 @@
 
 <!-- Ambient background glow -->
 <div class="ambient" aria-hidden="true">
-    <div class="orb orb-blue"></div>
-    <div class="orb orb-purple"></div>
+    <div class="grid-veil"></div>
+    <div class="orb orb-a orb-blue" data-parallax="0.14"></div>
+    <div class="orb orb-b orb-purple" data-parallax="-0.10"></div>
+    <div class="orb orb-c" data-parallax="0.06"></div>
     <div class="grain"></div>
 </div>
 
@@ -62,7 +76,7 @@
     <!-- ================= Top Bar ================= -->
     <header class="topbar">
 
-        <div class="brand">
+        <a class="brand" href="#" aria-label="Deep Thought home">
             <div class="brand-mark" aria-hidden="true">
                 <svg viewBox="0 0 24 24" fill="none">
                     <path d="M12 2l2.4 6.6L21 11l-6.6 2.4L12 20l-2.4-6.6L3 11l6.6-2.4L12 2z"
@@ -76,7 +90,9 @@
                 </svg>
             </div>
             <span class="brand-name">Deep Thought</span>
-        </div>
+            <span class="brand-slash">/</span>
+            <span class="brand-sub">workspace</span>
+        </a>
 
         <div class="topbar-actions">
             <button class="ghost-btn" id="gmailBtn" aria-label="Gmail"
@@ -373,12 +389,29 @@
 
         <!-- Welcome -->
         <section class="welcome" id="welcomeScreen">
-            <div class="halo" aria-hidden="true"></div>
-            <h1 class="headline">
-                <span id="welcomeGreeting">Welcome</span>
-                <span class="welcome-question">What can I help you with today?</span>
+            <div class="hero-tag">
+                <span class="hero-dot"></span>
+                <span class="mono">v3.1 · online</span>
+            </div>
+            <h1 class="headline" data-reveal>
+                <span class="line"><span class="line-inner" id="welcomeGreeting">Welcome</span></span>
+                <span class="line welcome-question"><span class="line-inner">What can I help you<br>with today?</span></span>
             </h1>
-            <p class="subhead">Your private AI workspace — memory, documents and voice, in one place.</p>
+            <p class="subhead" data-reveal>Your private AI workspace — memory, documents, email, calendar and voice, unified in one calm surface.</p>
+            <ol class="chapters" data-reveal>
+                <li class="chapter">
+                    <span class="chapter-num mono">01</span>
+                    <div><h3>Ask, plan, decide.</h3><p>A single prompt. Memory-aware answers grounded in your files and history.</p></div>
+                </li>
+                <li class="chapter">
+                    <span class="chapter-num mono">02</span>
+                    <div><h3>Read your inbox.</h3><p>Draft replies, schedule sends, and turn threads into tasks — all from chat.</p></div>
+                </li>
+                <li class="chapter">
+                    <span class="chapter-num mono">03</span>
+                    <div><h3>Own your data.</h3><p>Local database. Local memory. Integrations connect only when you choose.</p></div>
+                </li>
+            </ol>
         </section>
 
         <!-- Conversation -->
@@ -443,25 +476,36 @@
 
         </section>
 
-    </main>
+    <div class="marquee" aria-hidden="true">
+        <div class="marquee-track">
+            <span>Memory-aware</span><em>◆</em><span>Voice-native</span><em>◆</em>
+            <span>Local-first</span><em>◆</em><span>Calendar &amp; Mail</span><em>◆</em>
+            <span>Private by design</span><em>◆</em><span>Made for engineers &amp; founders</span><em>◆</em>
+            <span>Memory-aware</span><em>◆</em><span>Voice-native</span><em>◆</em>
+            <span>Local-first</span><em>◆</em><span>Calendar &amp; Mail</span><em>◆</em>
+            <span>Private by design</span><em>◆</em><span>Made for engineers &amp; founders</span><em>◆</em>
+        </div>
+    </div>
 
     <!-- ================= Footer ================= -->
     <footer class="statusbar">
-        <span class="pill"><span class="pill-dot ok"></span>Memory Connected</span>
-        <span class="pill"><span class="pill-dot ok"></span>Planner Ready</span>
+        <span class="pill pill-muted mono"><span class="pill-dot ok"></span>Memory · Local</span>
         <span class="pill" id="whatsappStatus">
             <span class="pill-dot pending"></span>
             <span id="whatsappStatusText">WhatsApp Connecting</span>
         </span>
-        <span class="pill pill-muted">v1.0</span>
+        <span class="pill pill-muted mono"><span class="pill-dot ok"></span>Model · Online</span>
     </footer>
+    </main>
 
 </div>
 
 <script>
     window.DEEP_THOUGHT_USER_ID = {{ default_user_id | tojson }};
 </script>
-<script src="static/js/app.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/studio-freight/lenis@1.0.42/bundled/lenis.min.js"></script>
+<script src="/static/js/motion.js?v=workspace-redesign-2" defer></script>
+<script src="/static/js/app.js?v=workspace-redesign-2" defer></script>
 
 </body>
 </html>
