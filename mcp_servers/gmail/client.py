@@ -15,10 +15,10 @@ from zoneinfo import ZoneInfo
 from dotenv import load_dotenv
 from mcp import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
-from openai import AsyncOpenAI
 
 from working_context import ToolExecutionResult, build_tool_event
 from debug_log import debug
+from model_provider import configured_model, create_async_responses_client
 
 
 load_dotenv()
@@ -27,11 +27,11 @@ INTERNAL_TOOLS = {"dispatch_due_scheduled_emails"}
 
 
 class GmailMCPClient:
-    def __init__(self, model: str = "gpt-4o-mini") -> None:
-        self.model = model
+    def __init__(self, model: str | None = None) -> None:
+        self.model = model or configured_model("gpt-4o-mini")
         self.project_root = Path(__file__).resolve().parents[2]
         self.timezone = ZoneInfo(os.getenv("APP_TIMEZONE", "Asia/Kolkata"))
-        self._openai = AsyncOpenAI()
+        self._openai = create_async_responses_client()
         self._stack: AsyncExitStack | None = None
         self._session: ClientSession | None = None
         self._start_lock = asyncio.Lock()

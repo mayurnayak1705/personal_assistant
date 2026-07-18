@@ -14,6 +14,7 @@ from daily_briefing import generate_daily_briefing
 from daily_briefing_store import set_daily_briefing_preference
 from working_context import ToolExecutionResult, build_tool_event, context_instructions
 from debug_log import debug
+from user_profile_store import DEFAULT_USER_ID
 
 
 WHATSAPP_SYSTEM_PROMPT = """
@@ -161,7 +162,7 @@ async def planner_node(state: GraphState):
     elif intent == "reminder_management":
         try:
             result = await reminder_client.execute(
-                user_id=state.get("user_id", "mayur"),
+                user_id=state.get("user_id") or DEFAULT_USER_ID,
                 user_input=state["user_input"],
                 system_prompt=REMINDER_SYSTEM_PROMPT + recent_context,
                 messages=state.get("messages", []),
@@ -173,7 +174,7 @@ async def planner_node(state: GraphState):
     elif intent == "task_management":
         try:
             result = await tasks_client.execute(
-                user_id=state.get("user_id", "mayur"),
+                user_id=state.get("user_id") or DEFAULT_USER_ID,
                 user_input=state["user_input"],
                 system_prompt=TASK_SYSTEM_PROMPT + recent_context,
                 messages=state.get("messages", []),
@@ -185,7 +186,7 @@ async def planner_node(state: GraphState):
     elif intent == "email_management":
         try:
             result = await gmail_client.execute(
-                user_id=state.get("user_id", "mayur"),
+                user_id=state.get("user_id") or DEFAULT_USER_ID,
                 user_input=state["user_input"],
                 system_prompt=GMAIL_SYSTEM_PROMPT + recent_context,
                 messages=state.get("messages", []),
@@ -208,7 +209,7 @@ async def planner_node(state: GraphState):
     elif intent == "daily_briefing":
         try:
             briefing = await generate_daily_briefing(
-                user_id=state.get("user_id", "mayur"),
+                user_id=state.get("user_id") or DEFAULT_USER_ID,
                 force=True,
             )
             result = ToolExecutionResult(
@@ -216,7 +217,7 @@ async def planner_node(state: GraphState):
                 events=[build_tool_event(
                     integration="briefing",
                     tool_name="generate_daily_briefing",
-                    arguments={"user_id": state.get("user_id", "mayur"), "force": True},
+                    arguments={"user_id": state.get("user_id") or DEFAULT_USER_ID, "force": True},
                     output={"briefing_date": briefing["briefing_date"], "summary": briefing["text"]},
                 )],
             )
@@ -231,7 +232,7 @@ async def planner_node(state: GraphState):
         elif briefing_time.hour >= 12:
             result = "Daily briefings are morning-only. What morning time would you like?"
         else:
-            user_id = state.get("user_id", "mayur")
+            user_id = state.get("user_id") or DEFAULT_USER_ID
             try:
                 saved = await asyncio.to_thread(
                     set_daily_briefing_preference,

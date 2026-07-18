@@ -1,7 +1,6 @@
 import json
 import sys
 
-from openai import OpenAI
 from mcp import ClientSession
 from mcp.client.stdio import (
     stdio_client,
@@ -10,6 +9,7 @@ from mcp.client.stdio import (
 
 from datetime import datetime
 from debug_log import debug
+from model_provider import configured_model, create_responses_client
 class MCPClient:
     """
     Generic MCP Client.
@@ -24,11 +24,11 @@ class MCPClient:
     def __init__(
         self,
         server_module: str,
-        model: str = "gpt-5",
+        model: str | None = None,
     ):
         self.server_module = server_module
-        self.model = model
-        self.openai = OpenAI()
+        self.model = model or configured_model("gpt-5")
+        self.openai = create_responses_client()
 
     async def execute(
         self,

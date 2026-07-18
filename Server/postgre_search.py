@@ -68,7 +68,7 @@ def fetch_conversation_history(conversation_id: str, limit: int = 50) -> list[di
             return cur.fetchall()
         
 
-def fetch_user_facts() -> str:
+def fetch_user_facts(user_id: str) -> str:
     """
     Returns all user facts as a single formatted string.
     """
@@ -78,8 +78,9 @@ def fetch_user_facts() -> str:
             cur.execute("""
                 SELECT fact_value
                 FROM user_facts
+                WHERE user_id = %s
                 ORDER BY created_at ASC
-            """)
+            """, (user_id,))
 
             rows = cur.fetchall()
 
@@ -96,7 +97,7 @@ NAME_FACT_KEYS = ("name", "first_name", "full_name", "preferred_name")
 
 
 def _normalize_profile_name(value: str) -> str:
-    """Convert stored natural-language facts such as 'My name is Mayur' into a name."""
+    """Convert a stored natural-language name fact into a display name."""
     cleaned = str(value or "").strip().strip(".!,")
     match = re.match(
         r"^(?:my name is|i am|i'm|call me)\s+(.+)$",
@@ -107,7 +108,7 @@ def _normalize_profile_name(value: str) -> str:
 
 
 def fetch_user_profile_name(user_id: str) -> dict | None:
-    """Fetch the best name fact for this user, with a single-user DB fallback."""
+    """Fetch the best legacy name fact for exactly this user."""
     order = "confidence DESC NULLS LAST, updated_at DESC NULLS LAST, created_at DESC"
     with get_connection() as conn:
         with conn.cursor() as cur:
@@ -122,21 +123,6 @@ def fetch_user_profile_name(user_id: str) -> dict | None:
                 (user_id, list(NAME_FACT_KEYS)),
             )
             row = cur.fetchone()
-            if row is None:
-                # This application currently has one configured person but
-                # older memories used IDs such as "user-1" while tools use
-                # "mayur". Fall back only when exactly one name-owner exists.
-                cur.execute(
-                    f"""
-                    SELECT DISTINCT ON (user_id) user_id, fact_key, fact_value
-                    FROM user_facts
-                    WHERE LOWER(fact_key) = ANY(%s)
-                    ORDER BY user_id, {order};
-                    """,
-                    (list(NAME_FACT_KEYS),),
-                )
-                candidates = cur.fetchall()
-                row = candidates[0] if len(candidates) == 1 else None
     if row is None:
         return None
     display_name = _normalize_profile_name(row["fact_value"])

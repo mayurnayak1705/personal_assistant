@@ -26,6 +26,13 @@ CREATE TABLE IF NOT EXISTS chat_history (
 CREATE INDEX IF NOT EXISTS idx_chat_history_conversation
     ON chat_history(conversation_id, created_at);
 
+CREATE TABLE IF NOT EXISTS user_profiles (
+    user_id VARCHAR PRIMARY KEY,
+    display_name VARCHAR(120) NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS user_facts (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id VARCHAR NOT NULL,

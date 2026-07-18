@@ -29,7 +29,9 @@ RUNTIME_IMPORTS = {
     "langgraph": "langgraph",
     "langchain": "langchain",
     "langchain_openai": "langchain-openai",
+    "langchain_anthropic": "langchain-anthropic",
     "openai": "openai",
+    "anthropic": "anthropic",
     "mcp": "mcp",
     "fastmcp": "fastmcp",
     "psycopg": "psycopg[binary]",
@@ -75,11 +77,17 @@ def check_environment() -> bool:
     if not env_file.is_file():
         status("✗", ".env is missing (copy .env.example to .env)")
         return False
-    api_key = os.getenv("OPENAI_API_KEY", "").strip()
-    if not api_key or api_key.startswith("replace_"):
-        status("✗", "OPENAI_API_KEY is not configured in .env")
+    openai_key = os.getenv("OPENAI_API_KEY", "").strip()
+    anthropic_key = os.getenv("ANTHROPIC_API_KEY", "").strip()
+    openai_ready = bool(openai_key and not openai_key.startswith("replace_"))
+    anthropic_ready = bool(anthropic_key and not anthropic_key.startswith("replace_"))
+    if not openai_ready and not anthropic_ready:
+        status("✗", "Configure OPENAI_API_KEY or ANTHROPIC_API_KEY in .env")
         return False
-    status("✓", ".env and OPENAI_API_KEY are configured")
+    providers = ", ".join(
+        name for name, ready in (("OpenAI", openai_ready), ("Anthropic", anthropic_ready)) if ready
+    )
+    status("✓", f".env and model provider are configured ({providers})")
     return True
 
 
@@ -152,6 +160,7 @@ def apply_postgres_schema() -> bool:
         from daily_briefing_store import init_daily_briefing_schema
         from mcp_servers.gmail.storage import init_gmail_schema
         from mcp_servers.tasks.storage import init_task_schema
+        from user_profile_store import init_user_profile_schema
         from working_context_store import init_working_context_schema
 
         for initializer in (
@@ -160,6 +169,7 @@ def apply_postgres_schema() -> bool:
             init_working_context_schema,
             init_action_history_schema,
             init_daily_briefing_schema,
+            init_user_profile_schema,
         ):
             initializer()
         status("✓", "PostgreSQL schema and application tables are ready")
@@ -170,7 +180,7 @@ def apply_postgres_schema() -> bool:
 
 
 def check_postgres_tables() -> bool:
-    required = {"memories", "chat_history", "user_facts", "reminders", "tasks"}
+    required = {"memories", "chat_history", "user_profiles", "user_facts", "reminders", "tasks"}
     try:
         with connect_target() as connection:
             rows = connection.execute(

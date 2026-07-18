@@ -35,6 +35,21 @@
 
 <body>
 
+<section class="profile-setup-overlay hidden" id="profileSetupModal" role="dialog"
+         aria-modal="true" aria-labelledby="profileSetupTitle">
+    <form class="profile-setup-card" id="profileSetupForm">
+        <div class="profile-setup-mark" aria-hidden="true">✦</div>
+        <span class="profile-setup-eyebrow">Welcome to Deep Thought</span>
+        <h1 id="profileSetupTitle">What should I call you?</h1>
+        <p>Your name is saved privately in your local PostgreSQL database and used for greetings and assistant context.</p>
+        <label for="profileNameInput">Your name</label>
+        <input id="profileNameInput" name="display_name" type="text" maxlength="120"
+               autocomplete="name" placeholder="Enter your name" required>
+        <p class="profile-setup-error hidden" id="profileSetupError" role="alert"></p>
+        <button id="profileSetupSubmit" type="submit">Continue</button>
+    </form>
+</section>
+
 <!-- Ambient background glow -->
 <div class="ambient" aria-hidden="true">
     <div class="orb orb-blue"></div>
@@ -443,6 +458,9 @@
 
 </div>
 
+<script>
+    window.DEEP_THOUGHT_USER_ID = {{ default_user_id | tojson }};
+</script>
 <script src="static/js/app.js"></script>
 
 </body>

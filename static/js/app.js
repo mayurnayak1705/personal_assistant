@@ -86,10 +86,15 @@ const expenseImportNotificationCount = document.getElementById("expenseImportNot
 const replyContext = document.getElementById("replyContext");
 const replyContactName = document.getElementById("replyContactName");
 const cancelReplyBtn = document.getElementById("cancelReplyBtn");
+const profileSetupModal = document.getElementById("profileSetupModal");
+const profileSetupForm = document.getElementById("profileSetupForm");
+const profileNameInput = document.getElementById("profileNameInput");
+const profileSetupError = document.getElementById("profileSetupError");
+const profileSetupSubmit = document.getElementById("profileSetupSubmit");
 
 const CONVERSATION_ID_KEY = "assistant_conversation_id";
 const WHATSAPP_CURSOR_KEY = "whatsapp_message_cursor";
-const USER_ID = "mayur";
+const USER_ID = window.DEEP_THOUGHT_USER_ID || "local-user";
 const THEME_KEY = "assistant_theme";
 let whatsappEnabled = false;
 let whatsappPaired = false;
@@ -270,6 +275,15 @@ function getConversationId(){
 let conversationId = getConversationId();
 let replyTarget = null;
 let userProfile = null;
+let resolveProfileSetup = null;
+
+function applyUserProfile(profile){
+    userProfile = profile;
+    const name = profile?.first_name || profile?.display_name;
+    welcomeGreeting.textContent = name
+        ? `${profile.greeting}, ${name}`
+        : profile?.greeting || "Welcome";
+}
 
 async function loadUserProfile(){
     try{
@@ -278,10 +292,7 @@ async function loadUserProfile(){
         );
         if(!response.ok) throw new Error("profile unavailable");
         userProfile = await response.json();
-        const name = userProfile.first_name || userProfile.display_name;
-        welcomeGreeting.textContent = name
-            ? `${userProfile.greeting}, ${name}`
-            : userProfile.greeting;
+        applyUserProfile(userProfile);
         return userProfile;
     }catch(_err){
         welcomeGreeting.textContent = "Welcome";
@@ -289,8 +300,52 @@ async function loadUserProfile(){
     }
 }
 
+function requestProfileName(){
+    profileSetupError.classList.add("hidden");
+    profileSetupError.textContent = "";
+    profileSetupModal.classList.remove("hidden");
+    requestAnimationFrame(() => profileNameInput.focus());
+    return new Promise(resolve => {
+        resolveProfileSetup = resolve;
+    });
+}
+
+profileSetupForm.addEventListener("submit", async event => {
+    event.preventDefault();
+    const displayName = profileNameInput.value.trim();
+    if(!displayName) return;
+
+    profileSetupSubmit.disabled = true;
+    profileSetupSubmit.textContent = "Saving…";
+    profileSetupError.classList.add("hidden");
+    try{
+        const response = await fetch("/api/user/profile", {
+            method:"POST",
+            headers:{"Content-Type":"application/json"},
+            body:JSON.stringify({user_id:USER_ID, display_name:displayName})
+        });
+        const payload = await response.json();
+        if(!response.ok) throw new Error(payload.detail || "Could not save your name.");
+        applyUserProfile(payload);
+        profileSetupModal.classList.add("hidden");
+        const resolver = resolveProfileSetup;
+        resolveProfileSetup = null;
+        if(resolver) resolver(payload);
+    }catch(err){
+        profileSetupError.textContent = err.message || "Could not save your name. Please try again.";
+        profileSetupError.classList.remove("hidden");
+        profileNameInput.focus();
+    }finally{
+        profileSetupSubmit.disabled = false;
+        profileSetupSubmit.textContent = "Continue";
+    }
+});
+
 async function initializeWelcome(){
-    const profile = await loadUserProfile();
+    let profile = await loadUserProfile();
+    if(profile?.needs_setup){
+        profile = await requestProfileName();
+    }
     if(profile?.time_period === "morning"){
         await loadDailyBriefing();
     }

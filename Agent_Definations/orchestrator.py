@@ -1,14 +1,14 @@
 from typing import Literal
 from langchain_core.messages import HumanMessage, SystemMessage
-from langchain_openai import ChatOpenAI
 from graph_state import GraphState
 from working_context import context_instructions
 from debug_log import debug
+from model_provider import create_chat_model
 
 from dotenv import load_dotenv
 
 load_dotenv()
-llm = ChatOpenAI(model="gpt-4o-mini")
+llm = create_chat_model(default_openai="gpt-4o-mini")
 
 SYSTEM_PROMPT = """
 You are the Orchestrator Agent of an AI Assistant.
@@ -463,7 +463,9 @@ def orchestrator_node(state: GraphState):
     user_facts = state.get("user_facts", [])
 
     if user_facts:
-        facts = "\n".join(f"- {fact}" for fact in user_facts)
+        facts = user_facts if isinstance(user_facts, str) else "\n".join(
+            f"- {fact}" for fact in user_facts
+        )
 
         messages.append(
             SystemMessage(
@@ -510,7 +512,8 @@ Use them only if they help determine the user's intent.
 
     debug("AGENT", "start", agent="orchestrator",
           conversation_id=state.get("conversation_id"), user_id=state.get("user_id"),
-          message_count=len(conversation_messages), fact_count=len(user_facts or []))
+          message_count=len(conversation_messages),
+          fact_count=len(user_facts.splitlines()) if isinstance(user_facts, str) else len(user_facts or []))
     response: OrchestratorDecision = (
         llm.with_structured_output(OrchestratorDecision)
         .invoke(messages)

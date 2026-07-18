@@ -17,6 +17,7 @@ from action_history_store import init_action_history_schema
 from daily_briefing_store import init_daily_briefing_schema
 from working_context_store import init_working_context_schema
 from debug_log import debug, install_sqlite_tracing
+from user_profile_store import DEFAULT_USER_ID, init_user_profile_schema
 
 install_sqlite_tracing()
 
@@ -36,6 +37,7 @@ async def lifespan(app: FastAPI):
         "Working context": asyncio.to_thread(init_working_context_schema),
         "Action history": asyncio.to_thread(init_action_history_schema),
         "Daily briefing": asyncio.to_thread(init_daily_briefing_schema),
+        "User profile": asyncio.to_thread(init_user_profile_schema),
     }
     results = await asyncio.gather(*services.values(), return_exceptions=True)
     for service_name, result in zip(services, results):
@@ -91,4 +93,5 @@ async def index(request: Request):
     return templates.TemplateResponse(
         request=request,
         name="index.html",
+        context={"default_user_id": DEFAULT_USER_ID},
     )

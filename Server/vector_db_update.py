@@ -1,7 +1,7 @@
 import chromadb
 import os
-from openai import OpenAI
 from dotenv import load_dotenv
+from embedding_provider import collection_name, get_embedding
 
 load_dotenv()
 
@@ -10,19 +10,8 @@ client = chromadb.PersistentClient(
 )
 
 collection = client.get_or_create_collection(
-    name="assistant_memory"
+    name=collection_name()
 )
-
-openai_client = OpenAI()
-
-
-def get_embedding(text: str):
-    response = openai_client.embeddings.create(
-        model="text-embedding-3-small",
-        input=text,
-    )
-
-    return response.data[0].embedding
 
 
 def update_vector(

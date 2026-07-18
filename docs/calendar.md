@@ -41,7 +41,7 @@ Restart the FastAPI application after authorization. Verify the connection at
 ## Chat examples
 
 ```text
-Schedule a call tomorrow at 10 PM with xyz@gmail.com regarding our startup discussion.
+Schedule a call tomorrow at 10 PM with attendee@example.com regarding our startup discussion.
 
 Schedule a 45-minute product review on Friday at 3 PM with a@example.com and b@example.com.
 

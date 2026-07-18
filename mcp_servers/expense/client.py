@@ -4,17 +4,17 @@ from datetime import datetime
 
 from mcp import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
-from openai import OpenAI
 from working_context import ToolExecutionResult, build_tool_event
 from debug_log import debug
+from model_provider import configured_model, create_responses_client
 
 
 class ExpenseMCPClient:
     """Expense-specific MCP client that preserves structured report artifacts."""
 
-    def __init__(self, model="gpt-4o-mini"):
-        self.model = model
-        self.openai = OpenAI()
+    def __init__(self, model=None):
+        self.model = model or configured_model("gpt-4o-mini")
+        self.openai = create_responses_client()
         self.server_params = StdioServerParameters(
             command=sys.executable,
             args=["-m", "mcp_servers.expense.server.main"],

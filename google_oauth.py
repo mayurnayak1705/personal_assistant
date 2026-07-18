@@ -14,6 +14,7 @@ from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
+from user_profile_store import DEFAULT_USER_ID
 
 try:  # Optional at development time; included in requirements for releases.
     import keyring
@@ -27,7 +28,6 @@ GOOGLE_SCOPES = (
 )
 
 _KEYRING_SERVICE = "deep-thought.google-oauth"
-_DEFAULT_USER_ID = "mayur"
 _PENDING_TTL_SECONDS = 10 * 60
 _PENDING_FLOWS: dict[str, tuple[float, str, Flow]] = {}
 _FLOW_LOCK = threading.Lock()
@@ -44,7 +44,7 @@ class GoogleConfigurationRequired(RuntimeError):
 
 def _safe_user_id(user_id: str) -> str:
     safe_user = "".join(character for character in user_id if character.isalnum() or character in "-_")
-    return safe_user or _DEFAULT_USER_ID
+    return safe_user or DEFAULT_USER_ID
 
 
 def _storage_root() -> Path:
@@ -105,7 +105,7 @@ def save_client_config(user_id: str, client_config: dict[str, Any]) -> dict[str,
     }
 
 
-def load_client_config(user_id: str = _DEFAULT_USER_ID) -> dict[str, Any]:
+def load_client_config(user_id: str = DEFAULT_USER_ID) -> dict[str, Any]:
     path = _client_config_file(user_id)
     if not path.is_file():
         raise GoogleConfigurationRequired(
@@ -151,7 +151,7 @@ def save_credentials(user_id: str, credentials: Credentials) -> str:
         return _write_payload(user_id, credentials.to_json())
 
 
-def load_credentials(user_id: str = _DEFAULT_USER_ID) -> Credentials:
+def load_credentials(user_id: str = DEFAULT_USER_ID) -> Credentials:
     with _CREDENTIAL_LOCK:
         payload = _read_payload(user_id)
         if not payload:
@@ -165,7 +165,7 @@ def load_credentials(user_id: str = _DEFAULT_USER_ID) -> Credentials:
         return credentials
 
 
-def delete_credentials(user_id: str = _DEFAULT_USER_ID) -> None:
+def delete_credentials(user_id: str = DEFAULT_USER_ID) -> None:
     with _CREDENTIAL_LOCK:
         if keyring is not None:
             try:
@@ -211,7 +211,7 @@ def complete_authorization(*, state: str, code: str) -> dict[str, Any]:
     return {"user_id": user_id, "storage": storage}
 
 
-def connection_status(user_id: str = _DEFAULT_USER_ID) -> dict[str, Any]:
+def connection_status(user_id: str = DEFAULT_USER_ID) -> dict[str, Any]:
     try:
         client_config = load_client_config(user_id)
         project_id = client_config["installed"].get("project_id")

@@ -19,18 +19,18 @@ from typing import Any, Iterable
 from dotenv import load_dotenv
 from mcp import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
-from openai import AsyncOpenAI
 from working_context import ToolExecutionResult, build_tool_event
 from debug_log import debug
+from model_provider import configured_model, create_async_responses_client
 
 load_dotenv()
 
 
 class WhatsAppMCPClient:
-    def __init__(self, model: str = "gpt-4o-mini") -> None:
-        self.model = model
+    def __init__(self, model: str | None = None) -> None:
+        self.model = model or configured_model("gpt-4o-mini")
         self.server_dir = Path(__file__).resolve().parent
-        self._openai = AsyncOpenAI()
+        self._openai = create_async_responses_client()
         self._session: ClientSession | None = None
         self._start_lock = asyncio.Lock()
         self._runner_task: asyncio.Task[None] | None = None

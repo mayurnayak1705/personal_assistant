@@ -192,7 +192,7 @@ def remember_user_fact(
     Examples:
     - My favorite language is Python
     - I use Cursor as my IDE
-    - I work at Radisys
+    - I work at a software company
     - I live in Bangalore
     - My preferred editor is VS Code
     - My name is John

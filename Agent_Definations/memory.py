@@ -2,7 +2,6 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from langchain_core.messages import HumanMessage, SystemMessage
-from langchain_openai import ChatOpenAI
 
 from graph_state import GraphState
 from conversation_utils import format_conversation
@@ -12,8 +11,9 @@ from client import MCPClient
 from mcp_servers.expense.client import expense_client
 from working_context import context_instructions
 from debug_log import debug
+from model_provider import create_chat_model, configured_model
 
-llm = ChatOpenAI(model="gpt-4.1")
+llm = create_chat_model(default_openai="gpt-4.1")
 
 SYSTEM_PROMPT = """
 # Memory Agent
@@ -306,7 +306,7 @@ load_dotenv()
 
 memory_client = MCPClient(
     server_module="Server.server",
-    model="gpt-4o-mini"
+    model=configured_model("gpt-4o-mini")
 )
 
 EXPENSE_SYSTEM_PROMPT = """

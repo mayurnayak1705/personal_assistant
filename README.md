@@ -1,7 +1,7 @@
 # Deep Thought
 
 Deep Thought is a local-first personal assistant built with FastAPI, LangGraph,
-OpenAI models and Model Context Protocol (MCP) tools. It combines a web chat UI
+OpenAI or Anthropic Claude models and Model Context Protocol (MCP) tools. It combines a web chat UI
 with durable memory, tasks, reminders, expense tracking, Gmail, Google Calendar
 and WhatsApp.
 
@@ -78,7 +78,7 @@ main.py                  FastAPI application and service lifecycle
 - Python 3.11 or newer (3.12 is used during development)
 - PostgreSQL 14 or newer
 - Go 1.22 or newer for WhatsApp
-- An OpenAI API key
+- An OpenAI API key or Anthropic API key
 - A Google Cloud Desktop OAuth client for Gmail/Calendar (optional)
 - A WhatsApp account capable of linking a device (optional)
 
@@ -107,8 +107,9 @@ Windows PowerShell activation:
 cp .env.example .env
 ```
 
-Edit `.env` and provide at least `OPENAI_API_KEY` and your PostgreSQL
-credentials. Never commit `.env`, OAuth JSON, tokens or local databases.
+Edit `.env`, provide at least one of `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`,
+and add your PostgreSQL credentials. Never commit `.env`, OAuth JSON, tokens or
+local databases.
 
 ### 3. Run the setup assistant
 
@@ -121,7 +122,7 @@ python scripts/setup.py
 The command:
 
 - validates Python and installed runtime packages;
-- verifies `.env` and `OPENAI_API_KEY`;
+- verifies `.env` and at least one supported model-provider API key;
 - checks Go for the optional WhatsApp integration;
 - connects to PostgreSQL and creates the configured database when the role has
   permission;
@@ -161,6 +162,11 @@ uvicorn main:app --reload
 
 Open [http://127.0.0.1:8000](http://127.0.0.1:8000).
 
+On the first app open, Deep Thought asks what it should call you. The name is
+stored in the local PostgreSQL `user_profiles` table and reused for greetings
+and assistant context. No login account is created or sent to an external
+service.
+
 The FastAPI lifecycle starts the MCP clients; you do not normally start every
 MCP server manually.
 
@@ -168,13 +174,21 @@ MCP server manually.
 
 | Variable | Required | Default | Purpose |
 | --- | --- | --- | --- |
-| `OPENAI_API_KEY` | Yes | — | Agent and MCP-client model calls |
+| `LLM_PROVIDER` | No | `auto` | `auto`, `openai`, or `anthropic`; auto prefers OpenAI when both are configured |
+| `OPENAI_API_KEY` | One provider required | — | OpenAI model calls and optional semantic-memory embeddings |
+| `ANTHROPIC_API_KEY` | One provider required | — | Anthropic Claude model calls |
+| `OPENAI_MODEL` | No | Call-site default | Override the OpenAI chat model |
+| `ANTHROPIC_MODEL` | No | `claude-sonnet-4-20250514` | Claude model used by all agents and MCP clients |
+| `LLM_MAX_TOKENS` | No | `4096` | Maximum generated tokens for Claude compatibility calls |
+| `EMBEDDING_PROVIDER` | No | `auto` | `openai` or `local`; auto uses local embeddings when no OpenAI key exists |
+| `OPENAI_EMBEDDING_MODEL` | No | `text-embedding-3-small` | OpenAI semantic-memory embedding model |
 | `POSTGRES_HOST` | Yes* | `localhost` | PostgreSQL host |
 | `POSTGRES_PORT` | No | `5432` | PostgreSQL port |
 | `POSTGRES_DB` | No | `ai_assistant_memory` | PostgreSQL database |
 | `POSTGRES_USER` | Yes* | `postgres` | PostgreSQL user |
 | `POSTGRES_PASSWORD` | Usually | empty | PostgreSQL password |
 | `APP_TIMEZONE` | No | `Asia/Kolkata` | Reminders, tasks, Gmail and Calendar timezone |
+| `DEEP_THOUGHT_USER_ID` | No | `local-user` | Stable key for the local profile and user-scoped records |
 | `GMAIL_FROM_EMAIL` | No | authenticated account | Optional explicit From address; it must belong to the authenticated account |
 | `GOOGLE_CALENDAR_ID` | No | `primary` | Calendar used by the Calendar MCP server |
 | `DEEP_THOUGHT_CREDENTIALS_DIR` | No | `~/.deep-thought/credentials` | Local Google OAuth configuration/token fallback |
@@ -186,6 +200,18 @@ MCP server manually.
 | `DEEP_THOUGHT_DEBUG` | No | `1` | Structured terminal diagnostics (`0` disables) |
 
 `*` Local peer authentication may not require explicit credentials.
+
+### Model providers
+
+`LLM_PROVIDER=auto` uses OpenAI when both provider keys are configured and
+otherwise selects the available provider. Set `LLM_PROVIDER=anthropic` to force
+Claude when both keys are present. All LangGraph agents and MCP clients use the
+same selection.
+
+Anthropic does not provide the embedding API used by semantic memory. A
+Claude-only installation therefore uses Chroma's local embedding function and
+a separate local collection automatically. Set `EMBEDDING_PROVIDER=openai` if
+you want Claude for reasoning while retaining OpenAI embeddings.
 
 ## Google Gmail and Calendar setup
 

@@ -1,5 +1,7 @@
 from typing import Any, Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+from user_profile_store import DEFAULT_USER_ID
 
 
 class ChatMessage(BaseModel):
@@ -10,7 +12,7 @@ class ChatMessage(BaseModel):
 class ChatRequest(BaseModel):
     message: str
     conversation_id: Optional[str] = None   # frontend generates & persists this per tab; server generates one if absent
-    user_id: Optional[str] = "mayur"        # single-user assistant for now
+    user_id: Optional[str] = DEFAULT_USER_ID
 
 
 class ChatResponse(BaseModel):
@@ -23,7 +25,7 @@ class ChatResponse(BaseModel):
 
 class EndSessionRequest(BaseModel):
     conversation_id: str
-    user_id: Optional[str] = "mayur"
+    user_id: Optional[str] = DEFAULT_USER_ID
 
 
 class EndSessionResponse(BaseModel):
@@ -32,12 +34,12 @@ class EndSessionResponse(BaseModel):
 
 
 class ReminderAcknowledgeRequest(BaseModel):
-    user_id: str = "mayur"
+    user_id: str = DEFAULT_USER_ID
     conversation_id: Optional[str] = None
 
 
 class TaskActionRequest(BaseModel):
-    user_id: str = "mayur"
+    user_id: str = DEFAULT_USER_ID
     conversation_id: Optional[str] = None
 
 
@@ -46,17 +48,22 @@ class WhatsAppToggleRequest(BaseModel):
 
 
 class GmailActionRequest(BaseModel):
-    user_id: str = "mayur"
+    user_id: str = DEFAULT_USER_ID
     conversation_id: Optional[str] = None
 
 
 class ExpenseImportActionRequest(BaseModel):
     action: str
     category: Optional[str] = None
-    user_id: str = "mayur"
+    user_id: str = DEFAULT_USER_ID
     conversation_id: Optional[str] = None
 
 
 class GoogleOAuthConfigRequest(BaseModel):
-    user_id: str = "mayur"
+    user_id: str = DEFAULT_USER_ID
     client_config: dict[str, Any]
+
+
+class UserProfileUpdateRequest(BaseModel):
+    user_id: str = DEFAULT_USER_ID
+    display_name: str = Field(min_length=1, max_length=120)

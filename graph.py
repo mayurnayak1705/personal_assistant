@@ -86,7 +86,7 @@ app = workflow.compile()
 
 state = {
     "conversation_id": "graph-manual-test",
-    "user_id": "mayur",
+    "user_id": "local-user",
     "messages": [
         HumanMessage(content="Can you add expense for travel 100 rupees on 10th July 2026")
     ],

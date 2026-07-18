@@ -1,12 +1,12 @@
 from langchain_core.messages import HumanMessage, SystemMessage
-from langchain_openai import ChatOpenAI
 
 from graph_state import GraphState
 from conversation_utils import format_conversation
 from working_context import format_working_context
 from debug_log import debug
+from model_provider import create_chat_model
 
-llm = ChatOpenAI(model="gpt-4.1")
+llm = create_chat_model(default_openai="gpt-4.1")
 
 SYSTEM_PROMPT = """
 # Response Agent

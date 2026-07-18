@@ -4,6 +4,7 @@ import traceback
 import logging
 import html
 import json
+import os
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -22,6 +23,7 @@ from schemas import (
     GmailActionRequest,
     ExpenseImportActionRequest,
     GoogleOAuthConfigRequest,
+    UserProfileUpdateRequest,
 )
 from graph import app
 from session_store import add_turn, get_turns, pop_session
@@ -48,6 +50,7 @@ from google_oauth import (
 )
 from expense_email_ingestion import pending_imports, resolve_import, scan_transaction_emails
 from debug_log import debug
+from user_profile_store import DEFAULT_USER_ID, get_user_profile, save_user_profile
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -59,6 +62,14 @@ def _time_period(hour: int) -> tuple[str, str]:
     if hour < 17:
         return "afternoon", "Good afternoon"
     return "evening", "Good evening"
+
+
+def _current_app_time() -> tuple[datetime, str]:
+    timezone_name = os.getenv("APP_TIMEZONE", "Asia/Kolkata")
+    try:
+        return datetime.now(ZoneInfo(timezone_name)), timezone_name
+    except Exception:
+        return datetime.now(ZoneInfo("UTC")), "UTC"
 
 
 async def _record_action_events(
@@ -101,7 +112,7 @@ async def chat(request: ChatRequest):
 
     try:
         conversation_id = request.conversation_id or str(uuid.uuid4())
-        user_id = request.user_id or "mayur"
+        user_id = request.user_id or DEFAULT_USER_ID
 
         try:
             working_context = await asyncio.to_thread(
@@ -126,7 +137,18 @@ async def chat(request: ChatRequest):
             else AIMessage(content=t["message"])
             for t in prior_turns
         ]
-        user_facts = await asyncio.to_thread(fetch_user_facts)
+        user_facts = await asyncio.to_thread(fetch_user_facts, user_id)
+        try:
+            profile = await asyncio.to_thread(get_user_profile, user_id)
+        except Exception as exc:
+            logger.warning("Could not load user profile for chat context: %s", exc)
+            profile = None
+        if profile:
+            user_facts = (
+                f"- Preferred name: {profile['display_name']}\n{user_facts}"
+                if user_facts != "No user facts found."
+                else f"- Preferred name: {profile['display_name']}"
+            )
         debug("API", "chat_context", conversation_id=conversation_id, user_id=user_id,
               prior_turn_count=len(prior_turns), user_facts_chars=len(str(user_facts)))
         state = {
@@ -224,7 +246,7 @@ async def end_session(request: EndSessionRequest):
     inserted_ids = await asyncio.to_thread(
         insert_chat_history_batch,
         conversation_id=request.conversation_id,
-        user_id=request.user_id or "mayur",
+        user_id=request.user_id or DEFAULT_USER_ID,
         turns=turns,
     )
 
@@ -245,15 +267,22 @@ async def health():
 
 
 @router.get("/user/profile")
-async def user_profile(user_id: str = "mayur"):
+async def user_profile(user_id: str = DEFAULT_USER_ID):
     """Return the database-backed display name and server-authoritative greeting."""
-    from datetime import datetime
-    from zoneinfo import ZoneInfo
-
-    now = datetime.now(ZoneInfo("Asia/Kolkata"))
+    now, timezone_name = _current_app_time()
     period, greeting = _time_period(now.hour)
     try:
-        profile = await asyncio.to_thread(fetch_user_profile_name, user_id)
+        profile = await asyncio.to_thread(get_user_profile, user_id)
+        if profile is None:
+            # Preserve an existing user's name from the older memory-backed
+            # implementation, then move all future reads to user_profiles.
+            legacy_profile = await asyncio.to_thread(fetch_user_profile_name, user_id)
+            if legacy_profile:
+                profile = await asyncio.to_thread(
+                    save_user_profile,
+                    user_id,
+                    legacy_profile["display_name"],
+                )
     except Exception as exc:
         logger.warning("Could not load user profile name: %s", exc)
         profile = None
@@ -261,16 +290,43 @@ async def user_profile(user_id: str = "mayur"):
         "user_id": user_id,
         "display_name": profile.get("display_name") if profile else None,
         "first_name": profile.get("first_name") if profile else None,
+        "needs_setup": profile is None,
         "greeting": greeting,
         "time_period": period,
         "current_time": now.isoformat(timespec="seconds"),
-        "timezone": "Asia/Kolkata",
+        "timezone": timezone_name,
+    }
+
+
+@router.post("/user/profile")
+async def update_user_profile(request: UserProfileUpdateRequest):
+    """Create or update the local user's display name."""
+    try:
+        profile = await asyncio.to_thread(
+            save_user_profile,
+            request.user_id,
+            request.display_name,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    now, timezone_name = _current_app_time()
+    period, greeting = _time_period(now.hour)
+    return {
+        **profile,
+        "needs_setup": False,
+        "greeting": greeting,
+        "time_period": period,
+        "current_time": now.isoformat(timespec="seconds"),
+        "timezone": timezone_name,
     }
 
 
 @router.get("/actions/recent")
 async def recent_actions(
-    user_id: str = "mayur",
+    user_id: str = DEFAULT_USER_ID,
     conversation_id: str | None = None,
     limit: int = 50,
 ):
@@ -289,7 +345,7 @@ async def recent_actions(
 
 
 @router.get("/briefing/daily")
-async def daily_briefing(user_id: str = "mayur", force: bool = False):
+async def daily_briefing(user_id: str = DEFAULT_USER_ID, force: bool = False):
     """Generate once after the user's scheduled time during morning hours."""
     try:
         if not force:
@@ -328,13 +384,13 @@ async def gmail_status():
 
 
 @router.get("/integrations/google/status")
-async def google_integration_status(user_id: str = "mayur"):
+async def google_integration_status(user_id: str = DEFAULT_USER_ID):
     """Return the shared Gmail and Calendar connection state."""
     return await asyncio.to_thread(google_connection_status, user_id)
 
 
 @router.post("/integrations/google/connect")
-async def google_integration_connect(request: Request, user_id: str = "mayur"):
+async def google_integration_connect(request: Request, user_id: str = DEFAULT_USER_ID):
     """Start a PKCE-protected Google desktop authorization flow."""
     redirect_uri = str(request.url_for("google_oauth_callback"))
     try:
@@ -395,7 +451,7 @@ async def google_oauth_callback(
 
 
 @router.post("/integrations/google/disconnect")
-async def google_integration_disconnect(user_id: str = "mayur"):
+async def google_integration_disconnect(user_id: str = DEFAULT_USER_ID):
     """Remove locally stored Google authorization for this user."""
     await asyncio.to_thread(delete_google_credentials, user_id)
     return {"connected": False, "gmail": False, "calendar": False}
@@ -468,7 +524,7 @@ async def resolve_expense_import(import_id: int, request: ExpenseImportActionReq
 @router.get("/gmail/messages/{message_id}")
 async def gmail_message(
     message_id: str,
-    user_id: str = "mayur",
+    user_id: str = DEFAULT_USER_ID,
     conversation_id: str | None = None,
 ):
     """Return one complete Gmail message for the safe reader modal."""
@@ -490,7 +546,7 @@ async def gmail_message(
 
 
 @router.get("/gmail/scheduled")
-async def gmail_scheduled(user_id: str = "mayur", limit: int = 20):
+async def gmail_scheduled(user_id: str = DEFAULT_USER_ID, limit: int = 20):
     try:
         return await gmail_client.scheduled_emails(user_id=user_id, limit=max(1, min(limit, 50)))
     except Exception as exc:
@@ -549,7 +605,7 @@ async def gmail_cancel_scheduled(schedule_id: str, request: GmailActionRequest):
 async def whatsapp_messages(
     after_id: int | None = None,
     limit: int = 50,
-    user_id: str = "mayur",
+    user_id: str = DEFAULT_USER_ID,
     conversation_id: str | None = None,
 ):
     """Poll new inbound WhatsApp messages for the browser UI."""
@@ -656,7 +712,7 @@ async def whatsapp_contacts(query: str = ""):
 
 
 @router.get("/reminders/due")
-async def due_reminders(user_id: str = "mayur", limit: int = 50):
+async def due_reminders(user_id: str = DEFAULT_USER_ID, limit: int = 50):
     """Return pending reminders whose scheduled time has passed."""
     try:
         return await reminder_client.due_reminders(
@@ -695,7 +751,7 @@ async def acknowledge_reminder(
 
 
 @router.get("/tasks/notifications")
-async def task_notifications(user_id: str = "mayur", limit: int = 50):
+async def task_notifications(user_id: str = DEFAULT_USER_ID, limit: int = 50):
     """Return open tasks that are due now or overdue for the notification panel."""
     try:
         return await tasks_client.notification_tasks(
@@ -707,7 +763,7 @@ async def task_notifications(user_id: str = "mayur", limit: int = 50):
 
 
 @router.get("/tasks")
-async def list_tasks(user_id: str = "mayur", view: str = "all", limit: int = 200):
+async def list_tasks(user_id: str = DEFAULT_USER_ID, view: str = "all", limit: int = 200):
     """Return task records and statuses for the dedicated Tasks panel."""
     try:
         return await tasks_client.list_tasks(

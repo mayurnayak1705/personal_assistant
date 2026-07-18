@@ -13,6 +13,7 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 
 from google_oauth import GoogleAuthenticationRequired, load_credentials
+from user_profile_store import DEFAULT_USER_ID
 
 
 SCOPES = ["https://www.googleapis.com/auth/gmail.modify"]
@@ -55,7 +56,7 @@ def authorize(client_secret_file: str, destination: str | None = None) -> Path:
 
 def credentials() -> Credentials:
     try:
-        return load_credentials(os.getenv("DEEP_THOUGHT_USER_ID", "mayur"))
+        return load_credentials(os.getenv("DEEP_THOUGHT_USER_ID", DEFAULT_USER_ID))
     except GoogleAuthenticationRequired:
         pass
     path = token_path()
