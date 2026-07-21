@@ -7,7 +7,7 @@ Any MCP client can participate without adding tool-specific database columns.
 For each MCP call made on behalf of the user:
 
 ```python
-from working_context import ToolExecutionResult, build_tool_event
+from app.memory.working_context import ToolExecutionResult, build_tool_event
 
 events.append(
     build_tool_event(
@@ -44,4 +44,4 @@ bounded to 30 events per conversation and expires according to
 Use conventional tool verb names (`create_`, `update_`, `complete_`, `delete_`,
 `send_`, `list_`, and so on) so action history can classify future tools
 automatically. Register integration-specific suggestions in
-`follow_up_suggestions.py`; the API will choose at most one for each turn.
+`app/memory/follow_up_suggestions.py`; the API will choose at most one for each turn.

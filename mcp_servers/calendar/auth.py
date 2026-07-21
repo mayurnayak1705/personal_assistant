@@ -11,8 +11,8 @@ from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 
-from google_oauth import GoogleAuthenticationRequired, load_credentials
-from user_profile_store import DEFAULT_USER_ID
+from app.features.google.oauth import GoogleAuthenticationRequired, load_credentials
+from app.features.profile.store import DEFAULT_USER_ID
 
 
 SCOPES = ["https://www.googleapis.com/auth/calendar.events"]

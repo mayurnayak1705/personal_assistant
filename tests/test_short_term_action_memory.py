@@ -2,8 +2,8 @@ import asyncio
 import unittest
 
 from mcp_servers.calendar.client import CalendarMCPClient
-from session_store import add_tool_events, get_tool_events, pop_session
-from working_context import replay_protection_message
+from app.memory.session_store import add_tool_events, get_tool_events, pop_session
+from app.memory.working_context import replay_protection_message
 
 
 def event(integration, tool_name, arguments=None):
@@ -62,4 +62,3 @@ class ShortTermActionMemoryTests(unittest.TestCase):
             return events
 
         self.assertEqual(asyncio.run(run())[0]["tool_name"], "send_email")
-

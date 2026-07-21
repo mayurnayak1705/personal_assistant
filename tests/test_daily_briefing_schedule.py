@@ -1,6 +1,6 @@
 from datetime import time
 
-from Agent_Definations.planner import _format_briefing_time, _parse_briefing_time
+from app.agents.planner import _format_briefing_time, _parse_briefing_time
 
 
 def test_parse_briefing_time_from_short_follow_up():

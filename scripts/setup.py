@@ -81,11 +81,20 @@ def check_environment() -> bool:
     anthropic_key = os.getenv("ANTHROPIC_API_KEY", "").strip()
     openai_ready = bool(openai_key and not openai_key.startswith("replace_"))
     anthropic_ready = bool(anthropic_key and not anthropic_key.startswith("replace_"))
-    if not openai_ready and not anthropic_ready:
-        status("✗", "Configure OPENAI_API_KEY or ANTHROPIC_API_KEY in .env")
+    local_ready = os.getenv("LLM_PROVIDER", "auto").strip().casefold() == "local" or bool(
+        os.getenv("LOCAL_LLM_MODEL", "").strip()
+    )
+    if not openai_ready and not anthropic_ready and not local_ready:
+        status("✗", "Configure a cloud API key or a local LLM in .env")
         return False
     providers = ", ".join(
-        name for name, ready in (("OpenAI", openai_ready), ("Anthropic", anthropic_ready)) if ready
+        name
+        for name, ready in (
+            ("OpenAI", openai_ready),
+            ("Anthropic", anthropic_ready),
+            ("local LLM", local_ready),
+        )
+        if ready
     )
     status("✓", f".env and model provider are configured ({providers})")
     return True
@@ -156,12 +165,14 @@ def apply_postgres_schema() -> bool:
 
         # These functions are idempotent and create the remaining application
         # tables/indexes used by startup and background integrations.
-        from action_history_store import init_action_history_schema
-        from daily_briefing_store import init_daily_briefing_schema
+        from app.memory.action_history_store import init_action_history_schema
+        from app.features.briefing.store import init_daily_briefing_schema
+        from app.features.finance.store import init_finance_schema
         from mcp_servers.gmail.storage import init_gmail_schema
         from mcp_servers.tasks.storage import init_task_schema
-        from user_profile_store import init_user_profile_schema
-        from working_context_store import init_working_context_schema
+        from app.features.profile.store import init_user_profile_schema
+        from app.memory.working_context_store import init_working_context_schema
+        from app.features.wellness.store import init_wellness_schema
 
         for initializer in (
             init_task_schema,
@@ -169,7 +180,9 @@ def apply_postgres_schema() -> bool:
             init_working_context_schema,
             init_action_history_schema,
             init_daily_briefing_schema,
+            init_finance_schema,
             init_user_profile_schema,
+            init_wellness_schema,
         ):
             initializer()
         status("✓", "PostgreSQL schema and application tables are ready")
@@ -211,7 +224,7 @@ def prepare_local_storage() -> None:
         paths[1].chmod(0o700)
     except OSError:
         pass
-    from expense_email_ingestion import init_schema as init_expense_import_schema
+    from app.features.expenses.email_ingestion import init_schema as init_expense_import_schema
     from mcp_servers.expense.server.main import init_db as init_expense_schema
 
     init_expense_schema()

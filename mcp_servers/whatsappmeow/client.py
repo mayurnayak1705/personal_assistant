@@ -19,9 +19,9 @@ from typing import Any, Iterable
 from dotenv import load_dotenv
 from mcp import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
-from working_context import ToolExecutionResult, build_tool_event
-from debug_log import debug
-from model_provider import configured_model, create_async_responses_client
+from app.memory.working_context import ToolExecutionResult, build_tool_event
+from app.core.debug import debug
+from app.core.models import configured_model, create_async_responses_client
 
 load_dotenv()
 

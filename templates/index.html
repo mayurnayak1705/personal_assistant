@@ -31,7 +31,7 @@
           href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
 
-    <link rel="stylesheet" href="/static/css/style.css?v=workspace-redesign-4">
+    <link rel="stylesheet" href="/static/css/style.css?v=finance-1">
 </head>
 
 <body>
@@ -60,6 +60,43 @@
         <p class="profile-setup-error hidden" id="profileSetupError" role="alert"></p>
         <button id="profileSetupSubmit" type="submit">Continue</button>
     </form>
+</section>
+
+<section class="wellness-overlay hidden" id="wellnessModal" role="dialog" aria-modal="true" aria-labelledby="wellnessTitle">
+  <div class="wellness-card">
+    <div class="wellness-head">
+      <div><span>Private wellness</span><h2 id="wellnessTitle">Visual insights</h2></div>
+      <div class="wellness-head-actions">
+        <button class="wellness-start" type="button" id="wellnessStart">Start wellness</button>
+        <button class="wellness-close" type="button" id="wellnessClose" aria-label="Close visual insights">×</button>
+      </div>
+    </div>
+    <div id="wellnessDashboard">
+      <div class="wellness-visuals-intro">
+        <div><strong>Your wellness patterns, at a glance</strong><p>Chat with Deep Thought to add meals, workouts, sleep, mood, hydration, or measurements.</p></div>
+        <button id="wellnessRefresh" type="button">Refresh insights</button>
+      </div>
+      <div id="wellnessReport"></div>
+    </div>
+  </div>
+</section>
+
+<section class="wellness-overlay hidden finance-overlay" id="financeModal" role="dialog" aria-modal="true" aria-labelledby="financeTitle">
+  <div class="wellness-card finance-card">
+    <div class="wellness-head finance-head">
+      <div><span>Market watch</span><h2 id="financeTitle">Stock watchlist</h2></div>
+      <div class="wellness-head-actions">
+        <button class="wellness-start" type="button" id="financeChat">Manage in chat</button>
+        <button class="wellness-close" type="button" id="financeClose" aria-label="Close stock watchlist">×</button>
+      </div>
+    </div>
+    <div class="wellness-visuals-intro finance-intro">
+      <div><strong>Your stocks, at a glance</strong><p>Add stocks and configure price or percentage alerts naturally in chat. A gainers/losers update appears at 9:15 AM.</p></div>
+      <button id="financeRefresh" type="button">Refresh prices</button>
+    </div>
+    <div id="financeReport"></div>
+    <p class="finance-disclaimer">Market data may be delayed. Tracking information is not investment advice.</p>
+  </div>
 </section>
 
 <!-- Ambient background glow -->
@@ -95,6 +132,12 @@
         </a>
 
         <div class="topbar-actions">
+            <button class="ghost-btn" id="financeBtn" aria-label="Stock watchlist" title="Stock watchlist">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19V9M10 19V5M16 19v-7M3 19h18"/><path d="m4 10 6-5 6 7 4-5"/></svg>
+            </button>
+            <button class="ghost-btn" id="wellnessBtn" aria-label="Wellness visual insights" title="Wellness insights">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 21s-7-4.4-7-11a4 4 0 0 1 7-2.7A4 4 0 0 1 19 10c0 6.6-7 11-7 11Z"/><path d="M8 13h2l1-3 2 6 1-3h2"/></svg>
+            </button>
             <button class="ghost-btn" id="gmailBtn" aria-label="Gmail"
                     aria-expanded="false" aria-controls="gmailPanel">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"
@@ -247,6 +290,14 @@
             </div>
             <div class="notification-list" id="expenseImportNotificationList"></div>
             <p class="notification-empty" id="expenseImportNotificationEmpty">No expenses awaiting review.</p>
+        </section>
+        <section class="notification-section" aria-labelledby="financeNotificationTitle">
+            <div class="notification-section-head">
+                <h3 id="financeNotificationTitle">Stock watchlist</h3>
+                <span id="financeNotificationCount">0</span>
+            </div>
+            <div class="notification-list" id="financeNotificationList"></div>
+            <p class="notification-empty" id="financeNotificationEmpty">No stock alerts.</p>
         </section>
     </aside>
 
@@ -504,8 +555,8 @@
     window.DEEP_THOUGHT_USER_ID = {{ default_user_id | tojson }};
 </script>
 <script src="https://cdn.jsdelivr.net/gh/studio-freight/lenis@1.0.42/bundled/lenis.min.js"></script>
-<script src="/static/js/motion.js?v=workspace-redesign-2" defer></script>
-<script src="/static/js/app.js?v=workspace-redesign-2" defer></script>
+<script src="/static/js/motion.js?v=wellness-1" defer></script>
+<script src="/static/js/app.js?v=finance-1" defer></script>
 
 </body>
 </html>

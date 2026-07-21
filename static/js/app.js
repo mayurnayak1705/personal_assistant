@@ -83,6 +83,9 @@ const taskNotificationCount = document.getElementById("taskNotificationCount");
 const expenseImportNotificationList = document.getElementById("expenseImportNotificationList");
 const expenseImportNotificationEmpty = document.getElementById("expenseImportNotificationEmpty");
 const expenseImportNotificationCount = document.getElementById("expenseImportNotificationCount");
+const financeNotificationList = document.getElementById("financeNotificationList");
+const financeNotificationEmpty = document.getElementById("financeNotificationEmpty");
+const financeNotificationCount = document.getElementById("financeNotificationCount");
 const replyContext = document.getElementById("replyContext");
 const replyContactName = document.getElementById("replyContactName");
 const cancelReplyBtn = document.getElementById("cancelReplyBtn");
@@ -91,6 +94,14 @@ const profileSetupForm = document.getElementById("profileSetupForm");
 const profileNameInput = document.getElementById("profileNameInput");
 const profileSetupError = document.getElementById("profileSetupError");
 const profileSetupSubmit = document.getElementById("profileSetupSubmit");
+const wellnessBtn = document.getElementById("wellnessBtn");
+const wellnessModal = document.getElementById("wellnessModal");
+const wellnessDashboard = document.getElementById("wellnessDashboard");
+const wellnessStartBtn = document.getElementById("wellnessStart");
+const financeBtn = document.getElementById("financeBtn");
+const financeModal = document.getElementById("financeModal");
+const financeReport = document.getElementById("financeReport");
+const financeChatBtn = document.getElementById("financeChat");
 
 const CONVERSATION_ID_KEY = "assistant_conversation_id";
 const WHATSAPP_CURSOR_KEY = "whatsapp_message_cursor";
@@ -1509,6 +1520,7 @@ const knownReminderIds = new Set();
 const notificationReminders = new Map();
 const notificationTasks = new Map();
 const notificationExpenseImports = new Map();
+const notificationFinance = new Map();
 const knownExpenseImportIds = new Set();
 const knownTaskIds = new Set();
 let taskOverview = [];
@@ -1525,17 +1537,43 @@ function updateNotificationIndicator(){
         || reminderQueue.length > 0
         || notificationReminders.size > 0
         || notificationTasks.size > 0
-        || notificationExpenseImports.size > 0;
+        || notificationExpenseImports.size > 0
+        || notificationFinance.size > 0;
     notifDot.classList.toggle("on", hasPending);
 }
 
 function updateNotificationCount(){
     notificationCount.textContent = String(
-        notificationReminders.size + notificationTasks.size + notificationExpenseImports.size
+        notificationReminders.size + notificationTasks.size + notificationExpenseImports.size + notificationFinance.size
     );
     reminderNotificationCount.textContent = String(notificationReminders.size);
     taskNotificationCount.textContent = String(notificationTasks.size);
     expenseImportNotificationCount.textContent = String(notificationExpenseImports.size);
+    financeNotificationCount.textContent = String(notificationFinance.size);
+}
+
+function renderFinanceNotifications(){
+    financeNotificationList.replaceChildren();
+    const items = Array.from(notificationFinance.values());
+    financeNotificationEmpty.classList.toggle("hidden", items.length > 0);
+    for(const alert of items){
+        const card = document.createElement("article");
+        card.className = "notification-item notification-finance";
+        const head = document.createElement("div");
+        head.className = "notification-item-head";
+        const icon = document.createElement("span");
+        icon.className = "notification-item-icon";
+        icon.textContent = alert.type === "daily" ? "↕" : "₹";
+        const copy = document.createElement("div");
+        const title = document.createElement("h3");
+        title.textContent = alert.title;
+        const message = document.createElement("p");
+        message.textContent = alert.message;
+        copy.append(title, message); head.append(icon, copy); card.append(head);
+        financeNotificationList.append(card);
+    }
+    updateNotificationCount();
+    updateNotificationIndicator();
 }
 
 const EXPENSE_IMPORT_CATEGORIES = [
@@ -1817,6 +1855,14 @@ function renderTaskOverview(){
         if(["todo", "in_progress"].includes(task.status)){
             const actions = document.createElement("div");
             actions.className = "notification-item-actions";
+            if(task.status === "todo"){
+                const progress = document.createElement("button");
+                progress.type = "button";
+                progress.className = "task-progress-btn";
+                progress.textContent = "Start";
+                progress.addEventListener("click", () => runTaskAction(task, "in-progress", progress));
+                actions.appendChild(progress);
+            }
             const complete = document.createElement("button");
             complete.type = "button";
             complete.className = "task-complete-btn";
@@ -1896,6 +1942,14 @@ function renderTaskNotifications(){
         due.textContent = taskDueLabel(task);
         const actions = document.createElement("div");
         actions.className = "notification-item-actions";
+        if(task.status === "todo"){
+            const progress = document.createElement("button");
+            progress.type = "button";
+            progress.className = "task-progress-btn";
+            progress.textContent = "Start";
+            progress.addEventListener("click", () => runTaskAction(task, "in-progress", progress));
+            actions.appendChild(progress);
+        }
         const complete = document.createElement("button");
         complete.type = "button";
         complete.className = "task-complete-btn";
@@ -1917,7 +1971,7 @@ function renderTaskNotifications(){
 async function runTaskAction(task, action, button){
     const originalText = button.textContent;
     button.disabled = true;
-    button.textContent = action === "complete" ? "Completing…" : "Moving…";
+    button.textContent = action === "complete" ? "Completing…" : action === "in-progress" ? "Starting…" : "Moving…";
     try{
         const response = await fetch(
             `/api/tasks/${encodeURIComponent(task.id)}/${action}`,
@@ -1935,8 +1989,8 @@ async function runTaskAction(task, action, button){
         knownTaskIds.delete(task.id);
         renderTaskNotifications();
         showNotice(
-            action === "complete" ? `Completed: ${task.title}` : `Moved to tomorrow: ${task.title}`,
-            action === "complete" ? "✓" : "📅"
+            action === "complete" ? `Completed: ${task.title}` : action === "in-progress" ? `In progress: ${task.title}` : `Moved to tomorrow: ${task.title}`,
+            action === "complete" ? "✓" : action === "in-progress" ? "▶" : "📅"
         );
         loadTaskOverview();
     }catch(_err){
@@ -2272,3 +2326,147 @@ function flushSession(){
 }
 
 window.addEventListener("pagehide", flushSession);
+
+/* ---------- Wellness dashboard ---------- */
+async function wellnessJson(url, options={}){
+    const response=await fetch(url, options); const data=await response.json();
+    if(!response.ok) throw new Error(data.detail || "Wellness request failed"); return data;
+}
+function wellnessValue(value, fallback="—"){return value===null||value===undefined?fallback:value}
+function wellnessLine(daily,field,color){const values=daily.map(d=>d[field]).filter(v=>v!==null&&v!==undefined);if(values.length<2)return "";const min=Math.min(...values),max=Math.max(...values),range=max-min||1;const points=values.map((v,i)=>`${(i/(values.length-1))*100},${92-((v-min)/range)*78}`).join(" ");return `<svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true" style="width:100%;height:130px"><polyline points="${points}" fill="none" stroke="${color}" stroke-width="2" vector-effect="non-scaling-stroke"/></svg>`}
+async function renderWellnessReport(){
+    const report=await wellnessJson(`/api/wellness/report?user_id=${encodeURIComponent(USER_ID)}&days=30`);
+    if(!report.profile){
+        document.getElementById("wellnessReport").innerHTML=`
+          <div class="wellness-empty">
+            <span aria-hidden="true">♡</span>
+            <h3>No wellness insights yet</h3>
+            <p>Start a private chat-guided setup. Once you log updates in conversation, your trends and progress will appear here.</p>
+            <button type="button" class="wellness-primary" data-start-wellness>Start wellness</button>
+          </div>`;
+        document.querySelector("[data-start-wellness]")?.addEventListener("click",startWellnessConversation);
+        wellnessStartBtn.textContent="Start wellness";
+        return;
+    }
+    const s=report.summary, daily=report.daily, progress=Math.round(s.goal_progress_percent||0);
+    const heights=daily.map(d=>Math.max(4,Math.min(100,(d.active_minutes||0)*2)));
+    wellnessStartBtn.textContent="Open wellness chat";
+    document.getElementById("wellnessReport").innerHTML=`
+      <h3>${report.profile?.primary_goal || "Your progress"}</h3>
+      <small>${report.profile?.motivation || "Thirty-day wellness overview"}</small>
+      <div class="wellness-progress"><i style="width:${progress}%"></i></div>
+      <div class="wellness-stats">
+       <div class="wellness-stat"><strong>${progress}%</strong><span>goal proximity</span></div>
+       <div class="wellness-stat"><strong>${s.workout_days}</strong><span>workout days</span></div>
+       <div class="wellness-stat"><strong>${s.diet_log_days}</strong><span>diet log days</span></div>
+       <div class="wellness-stat"><strong>${s.journal_days}</strong><span>journal days</span></div>
+       <div class="wellness-stat"><strong>${Math.round(s.active_minutes)}</strong><span>active minutes</span></div>
+       <div class="wellness-stat"><strong>${s.consistency_streak_days}</strong><span>day streak</span></div>
+       <div class="wellness-stat"><strong>${wellnessValue(s.this_week.sleep_hours)}</strong><span>avg sleep this week</span></div>
+       <div class="wellness-stat"><strong>${wellnessValue(s.this_week.mood)}</strong><span>avg mood this week</span></div>
+       <div class="wellness-stat"><strong>${wellnessValue(s.bmi)}</strong><span>BMI reference</span></div>
+       <div class="wellness-stat"><strong>${wellnessValue(s.estimated_bmr)}</strong><span>estimated BMR</span></div>
+      </div>
+      <div class="wellness-chart"><strong>Daily active minutes</strong><div class="wellness-bars">${heights.map(h=>`<i style="height:${h}%"></i>`).join("") || "<small>No activity logged yet.</small>"}</div><small>Last ${report.period_days} days · ${s.steps.toLocaleString()} total steps</small></div>
+      <div class="wellness-grid"><div class="wellness-chart"><strong>Weight trend</strong>${wellnessLine(daily,"weight_kg","#60a5fa")||"<p>No weight trend yet.</p>"}</div><div class="wellness-chart"><strong>Mood trend</strong>${wellnessLine(daily,"mood","#34d399")||"<p>No mood trend yet.</p>"}</div></div>`;
+}
+async function openWellness(){
+    wellnessModal.classList.remove("hidden");
+    try{await renderWellnessReport();}catch(err){showNotice(err.message,"♡")}
+}
+function startWellnessConversation(){
+    wellnessModal.classList.add("hidden");
+    input.value="Start my wellness setup. Guide me through the basic information one question at a time, then explain what I can log and which insights will be stored.";
+    input.dispatchEvent(new Event("input"));
+    sendMessage();
+}
+wellnessBtn?.addEventListener("click",openWellness);
+wellnessStartBtn?.addEventListener("click",startWellnessConversation);
+document.getElementById("wellnessClose")?.addEventListener("click",()=>wellnessModal.classList.add("hidden"));
+wellnessModal?.addEventListener("click",e=>{if(e.target===wellnessModal) wellnessModal.classList.add("hidden")});
+document.getElementById("wellnessRefresh")?.addEventListener("click",renderWellnessReport);
+const shownWellnessPrompts=new Set(JSON.parse(localStorage.getItem("deep-thought-wellness-prompts")||"[]"));
+async function pollWellnessPrompts(){
+    try{const data=await wellnessJson(`/api/wellness/notifications?user_id=${encodeURIComponent(USER_ID)}`);for(const prompt of data.notifications||[]){const key=`${new Date().toDateString()}:${prompt.type}`;if(!shownWellnessPrompts.has(key)){shownWellnessPrompts.add(key);localStorage.setItem("deep-thought-wellness-prompts",JSON.stringify([...shownWellnessPrompts].slice(-14)));showNotice(`${prompt.title}: ${prompt.message}`,"♡",9000);playNotificationSound();}}}catch(_err){}
+}
+setTimeout(pollWellnessPrompts,4000);setInterval(pollWellnessPrompts,60000);
+
+/* ---------- Finance watchlist (configuration remains chat-only) ---------- */
+function financeEscape(value){
+    return String(value ?? "").replace(/[&<>'"]/g, char => ({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"})[char]);
+}
+function financeMoney(value, currency){
+    if(value === null || value === undefined) return "—";
+    try{return new Intl.NumberFormat("en-IN", {style:"currency", currency:currency || "INR", maximumFractionDigits:2}).format(value);}
+    catch(_err){return `${Number(value).toFixed(2)} ${financeEscape(currency)}`;}
+}
+function financeAlertLabel(stock){
+    if(!stock.alert_kind || stock.alert_value === null) return "No alert";
+    const value = Number(stock.alert_value);
+    const labels = {
+        percent_up:`Up ${value}%`, percent_down:`Down ${value}%`,
+        percent_deviation:`Moves ±${value}%`, price_above:`Above ${financeMoney(value, stock.currency || "INR")}`,
+        price_below:`Below ${financeMoney(value, stock.currency || "INR")}`
+    };
+    return labels[stock.alert_kind] || "Alert configured";
+}
+async function renderFinanceWatchlist(){
+    financeReport.innerHTML = '<div class="finance-loading">Refreshing market prices…</div>';
+    const response = await fetch(`/api/finance/watchlist?user_id=${encodeURIComponent(USER_ID)}`);
+    const data = await response.json();
+    if(!response.ok) throw new Error(data.detail || "Finance is unavailable");
+    if(!data.stocks?.length){
+        financeReport.innerHTML = `<div class="wellness-empty finance-empty"><span aria-hidden="true">↗</span><h3>No stocks tracked yet</h3><p>Tell Deep Thought which company or ticker to watch. You can include a price or percentage alert in the same sentence.</p><button type="button" class="wellness-primary" data-start-finance>Add a stock in chat</button></div>`;
+        document.querySelector("[data-start-finance]")?.addEventListener("click", startFinanceConversation);
+        return;
+    }
+    financeReport.innerHTML = `<div class="finance-grid">${data.stocks.map(stock => {
+        const quote = stock.quote;
+        const movement = quote ? Number(quote.change_percent) : null;
+        const movementClass = movement > 0 ? "finance-up" : movement < 0 ? "finance-down" : "finance-flat";
+        return `<article class="finance-stock ${stock.alert_triggered ? "finance-alerting" : ""}">
+            <div class="finance-stock-head"><div><strong>${financeEscape(stock.symbol)}</strong><span>${financeEscape(stock.exchange || "")}</span></div><span class="${movementClass}">${movement === null ? "Unavailable" : `${movement >= 0 ? "+" : ""}${movement.toFixed(2)}%`}</span></div>
+            <h3>${financeEscape(stock.company_name)}</h3>
+            <div class="finance-price">${quote ? financeMoney(quote.price, quote.currency) : "—"}</div>
+            <div class="finance-meta"><span>${quote ? financeEscape(quote.market_state) : "Quote unavailable"}</span><span>${financeEscape(financeAlertLabel({...stock, currency:quote?.currency}))}</span></div>
+        </article>`;
+    }).join("")}</div>${data.errors?.length ? '<p class="finance-error">Some live quotes could not be refreshed.</p>' : ""}`;
+}
+async function openFinance(){
+    financeModal.classList.remove("hidden");
+    try{await renderFinanceWatchlist();}catch(err){financeReport.innerHTML = `<div class="wellness-empty"><h3>Could not load stocks</h3><p>${financeEscape(err.message)}</p></div>`;}
+}
+function startFinanceConversation(){
+    financeModal.classList.add("hidden");
+    input.value = "I want to manage my stock watchlist. ";
+    input.dispatchEvent(new Event("input")); input.focus();
+}
+financeBtn?.addEventListener("click", openFinance);
+financeChatBtn?.addEventListener("click", startFinanceConversation);
+document.getElementById("financeClose")?.addEventListener("click", () => financeModal.classList.add("hidden"));
+financeModal?.addEventListener("click", event => {if(event.target === financeModal) financeModal.classList.add("hidden");});
+document.getElementById("financeRefresh")?.addEventListener("click", renderFinanceWatchlist);
+
+const shownFinanceNotifications = new Set(JSON.parse(localStorage.getItem("deep-thought-finance-notifications") || "[]"));
+async function pollFinanceNotifications(){
+    try{
+        const response = await fetch(`/api/finance/notifications?user_id=${encodeURIComponent(USER_ID)}`);
+        if(!response.ok) return;
+        const data = await response.json();
+        const current = new Set();
+        for(const alert of data.notifications || []){
+            current.add(alert.id); notificationFinance.set(alert.id, alert);
+            if(!shownFinanceNotifications.has(alert.id)){
+                shownFinanceNotifications.add(alert.id);
+                showNotice(`${alert.title}: ${alert.message}`, alert.type === "daily" ? "↕" : "₹", 10000);
+                playNotificationSound();
+            }
+        }
+        for(const id of notificationFinance.keys()) if(!current.has(id)) notificationFinance.delete(id);
+        localStorage.setItem("deep-thought-finance-notifications", JSON.stringify([...shownFinanceNotifications].slice(-100)));
+        renderFinanceNotifications();
+    }catch(_err){}
+}
+renderFinanceNotifications();
+setTimeout(pollFinanceNotifications, 5000);
+setInterval(pollFinanceNotifications, 60000);

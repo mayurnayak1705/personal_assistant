@@ -7,17 +7,19 @@ from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from api.routes import router
+from app.api.routes import router
 from mcp_servers.whatsappmeow.client import whatsapp_client
 from mcp_servers.reminder.client import reminder_client
 from mcp_servers.tasks.client import tasks_client
 from mcp_servers.gmail.client import gmail_client
 from mcp_servers.calendar.client import calendar_client
-from action_history_store import init_action_history_schema
-from daily_briefing_store import init_daily_briefing_schema
-from working_context_store import init_working_context_schema
-from debug_log import debug, install_sqlite_tracing
-from user_profile_store import DEFAULT_USER_ID, init_user_profile_schema
+from app.core.debug import debug, install_sqlite_tracing
+from app.features.briefing.store import init_daily_briefing_schema
+from app.features.finance.store import init_finance_schema
+from app.features.profile.store import DEFAULT_USER_ID, init_user_profile_schema
+from app.features.wellness.store import init_wellness_schema
+from app.memory.action_history_store import init_action_history_schema
+from app.memory.working_context_store import init_working_context_schema
 
 install_sqlite_tracing()
 
@@ -38,6 +40,8 @@ async def lifespan(app: FastAPI):
         "Action history": asyncio.to_thread(init_action_history_schema),
         "Daily briefing": asyncio.to_thread(init_daily_briefing_schema),
         "User profile": asyncio.to_thread(init_user_profile_schema),
+        "Wellness": asyncio.to_thread(init_wellness_schema),
+        "Finance": asyncio.to_thread(init_finance_schema),
     }
     results = await asyncio.gather(*services.values(), return_exceptions=True)
     for service_name, result in zip(services, results):

@@ -4,9 +4,9 @@ from datetime import datetime
 
 from mcp import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
-from working_context import ToolExecutionResult, build_tool_event
-from debug_log import debug
-from model_provider import configured_model, create_responses_client
+from app.memory.working_context import ToolExecutionResult, build_tool_event
+from app.core.debug import debug
+from app.core.models import configured_model, create_responses_client
 
 
 class ExpenseMCPClient:

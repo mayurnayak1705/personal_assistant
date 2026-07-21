@@ -7,7 +7,7 @@ from typing import Any
 
 from psycopg.types.json import Jsonb
 
-from Server.postgre_insert import get_connection
+from app.persistence.postgres_insert import get_connection
 
 
 def init_gmail_schema() -> None:

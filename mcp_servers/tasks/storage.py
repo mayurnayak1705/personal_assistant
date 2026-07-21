@@ -8,7 +8,7 @@ from uuid import UUID
 
 from psycopg.types.json import Jsonb
 
-from Server.postgre_insert import get_connection
+from app.persistence.postgres_insert import get_connection
 
 
 TASK_FIELDS = (

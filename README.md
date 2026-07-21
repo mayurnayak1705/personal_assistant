@@ -1,7 +1,7 @@
 # Deep Thought
 
 Deep Thought is a local-first personal assistant built with FastAPI, LangGraph,
-OpenAI or Anthropic Claude models and Model Context Protocol (MCP) tools. It combines a web chat UI
+OpenAI, Anthropic Claude, or local models and Model Context Protocol (MCP) tools. It combines a web chat UI
 with durable memory, tasks, reminders, expense tracking, Gmail, Google Calendar
 and WhatsApp.
 
@@ -21,9 +21,11 @@ and WhatsApp.
 | Gmail | Read, search, draft, send, reply, archive and scheduled delivery |
 | Calendar | Create/list/cancel events, Google Meet links and attendee invitations |
 | Expenses | INR expenses, search, editing, reports, budgets, charts and undo |
+| Finance | Stock watchlists, market summaries and price/change alerts |
 | Gmail expense imports | Conservative Indian-bank debit detection with user review and categorization |
 | Memory | PostgreSQL source of truth, Chroma semantic lookup, working context and action history |
 | Daily briefing | Once-per-morning summary of due work, reminders and pending items |
+| Wellness | Goal onboarding, diet/workout/journal logs, twice-daily prompts and visual progress reports |
 | UI | Dark/light themes, notification center, task panel, Gmail reader and responsive layout |
 
 ## How it works
@@ -51,13 +53,20 @@ Browser / natural-language request
 - MCP keeps external integrations separate from agent reasoning.
 
 See [docs/README.md](docs/README.md) for focused design and integration guides.
+See [docs/TESTING.md](docs/TESTING.md) for local testing, CI and release checks.
 
 ## Repository layout
 
 ```text
-Agent_Definations/       LangGraph agent nodes and prompts
-Server/                  Memory MCP server and PostgreSQL/Chroma adapters
-api/                     FastAPI routes
+app/
+  agents/                LangGraph agent nodes and prompts
+  api/                   FastAPI routes
+  clients/               Shared integration clients
+  core/                  Configuration, model providers and diagnostics
+  features/              Briefing, expenses, finance, Google, profile and wellness
+  memory/                Conversation context, sessions and action history
+  orchestration/         LangGraph workflow and state
+  persistence/           PostgreSQL and Chroma adapters
 mcp_servers/
   calendar/              Google Calendar MCP server/client
   expense/               SQLite expense tracker MCP server/client
@@ -69,7 +78,6 @@ static/                  Browser JavaScript and CSS
 templates/               Main HTML application
 docs/                    Setup, architecture and feature documentation
 tests/                   Focused automated assertions
-graph.py                 LangGraph workflow
 main.py                  FastAPI application and service lifecycle
 ```
 
@@ -78,7 +86,7 @@ main.py                  FastAPI application and service lifecycle
 - Python 3.11 or newer (3.12 is used during development)
 - PostgreSQL 14 or newer
 - Go 1.22 or newer for WhatsApp
-- An OpenAI API key or Anthropic API key
+- An OpenAI API key, Anthropic API key, or a local OpenAI-compatible LLM server
 - A Google Cloud Desktop OAuth client for Gmail/Calendar (optional)
 - A WhatsApp account capable of linking a device (optional)
 
@@ -107,7 +115,7 @@ Windows PowerShell activation:
 cp .env.example .env
 ```
 
-Edit `.env`, provide at least one of `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`,
+Edit `.env`, configure OpenAI, Anthropic, or a local LLM as described below,
 and add your PostgreSQL credentials. Never commit `.env`, OAuth JSON, tokens or
 local databases.
 
@@ -122,7 +130,7 @@ python scripts/setup.py
 The command:
 
 - validates Python and installed runtime packages;
-- verifies `.env` and at least one supported model-provider API key;
+- verifies `.env` and at least one supported cloud or local model provider;
 - checks Go for the optional WhatsApp integration;
 - connects to PostgreSQL and creates the configured database when the role has
   permission;
@@ -174,12 +182,16 @@ MCP server manually.
 
 | Variable | Required | Default | Purpose |
 | --- | --- | --- | --- |
-| `LLM_PROVIDER` | No | `auto` | `auto`, `openai`, or `anthropic`; auto prefers OpenAI when both are configured |
-| `OPENAI_API_KEY` | One provider required | — | OpenAI model calls and optional semantic-memory embeddings |
-| `ANTHROPIC_API_KEY` | One provider required | — | Anthropic Claude model calls |
+| `LLM_PROVIDER` | No | `auto` | `auto`, `openai`, `anthropic`, or `local`; auto prefers configured cloud providers |
+| `OPENAI_API_KEY` | Cloud only | — | OpenAI model calls and optional semantic-memory embeddings |
+| `ANTHROPIC_API_KEY` | Cloud only | — | Anthropic Claude model calls |
 | `OPENAI_MODEL` | No | Call-site default | Override the OpenAI chat model |
 | `ANTHROPIC_MODEL` | No | `claude-sonnet-4-20250514` | Claude model used by all agents and MCP clients |
-| `LLM_MAX_TOKENS` | No | `4096` | Maximum generated tokens for Claude compatibility calls |
+| `LOCAL_LLM_BASE_URL` | Local only | `http://127.0.0.1:11434/v1` | OpenAI-compatible local API base URL |
+| `LOCAL_LLM_MODEL` | No | `llama3.1:8b` | Local model name; setting it also enables local selection in `auto` when no cloud key exists |
+| `LOCAL_LLM_API_KEY` | No | `local` | API key for local servers that require one |
+| `LOCAL_LLM_TIMEOUT` | No | `120` | Local request timeout in seconds |
+| `LLM_MAX_TOKENS` | No | `4096` | Maximum generated tokens for Anthropic/local compatibility calls |
 | `EMBEDDING_PROVIDER` | No | `auto` | `openai` or `local`; auto uses local embeddings when no OpenAI key exists |
 | `OPENAI_EMBEDDING_MODEL` | No | `text-embedding-3-small` | OpenAI semantic-memory embedding model |
 | `POSTGRES_HOST` | Yes* | `localhost` | PostgreSQL host |
@@ -203,10 +215,24 @@ MCP server manually.
 
 ### Model providers
 
-`LLM_PROVIDER=auto` uses OpenAI when both provider keys are configured and
-otherwise selects the available provider. Set `LLM_PROVIDER=anthropic` to force
-Claude when both keys are present. All LangGraph agents and MCP clients use the
-same selection.
+`LLM_PROVIDER=auto` selects OpenAI, then Anthropic, then a configured local
+model. Set the provider explicitly to override that order. All LangGraph agents
+and MCP clients use the same selection.
+
+For a local server, expose an OpenAI-compatible `/v1/chat/completions` endpoint
+and configure, for example:
+
+```dotenv
+LLM_PROVIDER=local
+LOCAL_LLM_BASE_URL=http://127.0.0.1:11434/v1
+LOCAL_LLM_MODEL=llama3.1:8b
+```
+
+The assistant relies on function/tool calling for tasks, reminders, memory and
+other integrations, so choose a local model and server that support OpenAI-style
+tool calls. Local inference stays on the configured endpoint; cloud API keys are
+not required. Semantic memory also defaults to local embeddings when no OpenAI
+key is configured.
 
 Anthropic does not provide the embedding API used by semantic memory. A
 Claude-only installation therefore uses Chroma's local embedding function and
@@ -324,8 +350,8 @@ Run syntax and focused parser checks:
 
 ```bash
 python -m pip install -r requirements-dev.txt
-python -m py_compile main.py api/routes.py graph.py
-python -m pytest -q
+python -m compileall -q main.py app mcp_servers
+./.venv/bin/python -m pytest -q
 ```
 
 Some external integration tests require PostgreSQL, Google OAuth, network

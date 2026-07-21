@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from Server.postgre_insert import get_connection
+from app.persistence.postgres_insert import get_connection
 
 
 def create_reminder_record(

@@ -15,9 +15,9 @@ from zoneinfo import ZoneInfo
 from dotenv import load_dotenv
 from mcp import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
-from working_context import ToolExecutionResult, build_tool_event
-from debug_log import debug
-from model_provider import configured_model, create_async_responses_client
+from app.memory.working_context import ToolExecutionResult, build_tool_event
+from app.core.debug import debug
+from app.core.models import configured_model, create_async_responses_client
 
 load_dotenv()
 
@@ -118,6 +118,16 @@ class TasksMCPClient:
         text, is_error = await self._call_tool(
             "complete_task",
             {"task_id": task_id, "user_id": user_id},
+        )
+        if is_error:
+            raise RuntimeError(text)
+        return json.loads(text)
+
+    async def start_task(self, task_id: str, user_id: str) -> dict[str, Any]:
+        """Move a task into its explicit in-progress state."""
+        text, is_error = await self._call_tool(
+            "update_task",
+            {"task_id": task_id, "user_id": user_id, "status": "in_progress"},
         )
         if is_error:
             raise RuntimeError(text)

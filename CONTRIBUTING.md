@@ -38,7 +38,7 @@ uvicorn main:app --reload
 At minimum, run checks relevant to the edited components:
 
 ```bash
-python -m py_compile main.py api/routes.py graph.py
+python -m compileall -q main.py app mcp_servers
 python -m pytest -q
 node --check static/js/app.js
 git diff --check

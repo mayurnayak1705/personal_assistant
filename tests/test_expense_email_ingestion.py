@@ -1,4 +1,4 @@
-from expense_email_ingestion import parse_transaction_email
+from app.features.expenses.email_ingestion import parse_transaction_email
 
 
 def email(sender, subject, body, message_id="message-1"):
